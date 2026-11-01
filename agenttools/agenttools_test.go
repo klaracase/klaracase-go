@@ -486,3 +486,87 @@ func TestNoResultHoldsTheToken(t *testing.T) {
 		}
 	}
 }
+
+func TestSlimCreditsCarryTheAPIBudgetOnlyWhenTheAnswerHasIt(t *testing.T) {
+	body := string(mustRead(t, "../testdata/conformance/bodies/decisions.search.api_budget.json"))
+	result, err := Call(context.Background(), serve(t, 200, body, nil), ToolSearchDecisions, json.RawMessage(`{"query":"Untreue"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	credits := decodeResult(t, result)["credits"].(map[string]any)
+	budget, _ := credits["api_budget"].(map[string]any)
+	if budget["cents"] != float64(4991) || budget["rate_cents_per_credit"] != float64(9) || budget["credits_at_rate"] != float64(554) ||
+		credits["credits_remaining"] != float64(0) {
+		t.Errorf("credits %v", credits)
+	}
+	plain, err := Call(context.Background(), serve(t, 200, fixture(t, "decisions.search.json"), nil), ToolSearchDecisions, json.RawMessage(`{"query":"Untreue"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, has := decodeResult(t, plain)["credits"].(map[string]any)["api_budget"]; has {
+		t.Error("no api_budget key in the answer, none in the slim result")
+	}
+}
+
+func TestPaymentRefusalsTellTheModelToStopAndAreNeverRetried(t *testing.T) {
+	cases := map[string]struct {
+		problem string
+		keep    map[string]any
+	}{
+		"insufficient_credits": {"insufficient_credits.api_budget_empty.json", map[string]any{
+			"reason": "api_budget_empty", "top_up_url": "https://klaracase.de/org/billing/api-budget", "cost": float64(1), "balance": float64(0)}},
+		"token_limit_reached": {"token_limit_reached.json", map[string]any{
+			"spent": float64(500), "cap": float64(500), "unit": "credits", "settings_url": "https://klaracase.de/org/api-keys"}},
+	}
+	for code, tc := range cases {
+		t.Run(code, func(t *testing.T) {
+			body := string(mustRead(t, "../testdata/conformance/problems/"+tc.problem))
+			var hits int
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				hits++
+				w.Header().Set("Content-Type", "application/problem+json")
+				w.WriteHeader(402)
+				_, _ = io.WriteString(w, body)
+			}))
+			defer srv.Close()
+			c, err := klaracase.New("klc_test_token", klaracase.WithBaseURL(srv.URL+"/api/v1"), klaracase.WithMaxRetries(3))
+			if err != nil {
+				t.Fatal(err)
+			}
+			result, err := Call(context.Background(), c, ToolSearchDecisions, json.RawMessage(`{"query":"Untreue"}`))
+			if err != nil {
+				t.Fatalf("a refusal is a result, not a Go error: %v", err)
+			}
+			e := errorOf(t, result)
+			if e["code"] != code || e["status"] != float64(402) {
+				t.Errorf("error %v", e)
+			}
+			for k, v := range tc.keep {
+				if e[k] != v {
+					t.Errorf("%s = %v, want %v", k, e[k], v)
+				}
+			}
+			step, _ := e["next_step"].(string)
+			if !strings.Contains(step, "Stop") || !strings.Contains(step, "Do not open any link") {
+				t.Errorf("next_step %q", step)
+			}
+			if _, has := e["retry_after_seconds"]; has || hits != 1 {
+				t.Errorf("retry_after_seconds in %v, %d requests", e, hits)
+			}
+		})
+	}
+	// Other errors carry no next_step.
+	notFound := errorOf(t, mustCall(t, serve(t, 404, `{"status":404,"code":"not_found","detail":"No."}`, nil)))
+	if _, has := notFound["next_step"]; has {
+		t.Errorf("not_found must not carry next_step: %v", notFound)
+	}
+}
+
+func mustCall(t *testing.T, c *klaracase.Client) string {
+	t.Helper()
+	result, err := Call(context.Background(), c, ToolGetDecision, json.RawMessage(`{"id":"x"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return result
+}

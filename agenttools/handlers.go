@@ -13,17 +13,30 @@ const fortgeltungNote = "The API does not check whether a decision is still good
 
 // credits is the part of the credit accounting that helps a model plan its next calls.
 type credits struct {
-	Cost             *int64 `json:"cost,omitempty"`
-	CreditsRemaining *int64 `json:"credits_remaining,omitempty"`
+	Cost             *int64     `json:"cost,omitempty"`
+	CreditsRemaining *int64     `json:"credits_remaining,omitempty"`
+	APIBudget        *apiBudget `json:"api_budget,omitempty"`
+}
+
+// apiBudget is the prepaid API budget, present only when the organization has one or may load one.
+type apiBudget struct {
+	Cents              int `json:"cents"`
+	RateCentsPerCredit int `json:"rate_cents_per_credit"`
+	CreditsAtRate      int `json:"credits_at_rate"`
 }
 
 func creditsOf(e *klaracase.Envelope) *credits {
 	cost, okCost := e.Cost()
 	left, okLeft := e.CreditsRemaining()
-	if !okCost && !okLeft {
+	var budget *apiBudget
+	if e.Credits != nil && e.Credits.APIBudget != nil {
+		b := e.Credits.APIBudget
+		budget = &apiBudget{Cents: b.Cents, RateCentsPerCredit: b.RateCentsPerCredit, CreditsAtRate: b.CreditsAtRate}
+	}
+	if !okCost && !okLeft && budget == nil {
 		return nil
 	}
-	out := &credits{}
+	out := &credits{APIBudget: budget}
 	if okCost {
 		out.Cost = &cost
 	}

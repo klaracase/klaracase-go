@@ -25,6 +25,11 @@
 // read it and act, for example by waiting or by narrowing a search. [Call] returns a Go error
 // only for a tool name that does not exist and for a canceled context.
 //
+// The codes insufficient_credits and token_limit_reached are never retried. Their error text
+// also holds next_step, which tells the model to stop and report to its user. The members
+// top_up_url and settings_url, when present, are for a human organization admin: a model must
+// show them to its user and never open them.
+//
 // # Results are short
 //
 // The result holds the fields a model needs, not the whole API answer. get_decision returns at

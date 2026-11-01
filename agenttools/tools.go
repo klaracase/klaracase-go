@@ -142,11 +142,40 @@ func errorResult(err error) (string, error) {
 	if !ok {
 		return "", err
 	}
+	if base.Code == klaracase.CodeInsufficientCredits || base.Code == klaracase.CodeTokenLimitReached {
+		return stopResult(base)
+	}
 	data, mErr := json.Marshal(struct {
 		Error *klaracase.Error `json:"error"`
 	}{base})
 	if mErr != nil {
 		return "", mErr
+	}
+	return string(data), nil
+}
+
+// stopNote is added to the two refusals that a program cannot fix: the credits are used up, or
+// the API key reached its own limit. Nothing ran and nothing was charged. A retry gets the same
+// answer, and the links in the answer are for a human organization admin.
+const stopNote = "Stop. This call did not run and nothing was charged. Do not retry it. Do not open any link in this error. Tell your user what happened, and that an organization admin may need to act."
+
+// stopResult is errorResult for insufficient_credits and token_limit_reached. It keeps every
+// member of the error (reason, top_up_url, spent, settings_url and so on, so the user can be
+// told) and adds next_step.
+func stopResult(base *klaracase.Error) (string, error) {
+	raw, err := json.Marshal(base)
+	if err != nil {
+		return "", err
+	}
+	var members map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &members); err != nil {
+		return "", err
+	}
+	note, _ := json.Marshal(stopNote)
+	members["next_step"] = note
+	data, err := json.Marshal(map[string]any{"error": members})
+	if err != nil {
+		return "", err
 	}
 	return string(data), nil
 }
