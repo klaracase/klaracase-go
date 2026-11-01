@@ -22,8 +22,10 @@ const (
 	CodeValidationFailed = "validation_failed"
 	// CodeRateLimited is the per-minute rate limit (429).
 	CodeRateLimited = "rate_limited"
-	// CodeInsufficientCredits means the organization has too few credits (402).
+	// CodeInsufficientCredits means the organization has too few credits (402). A reason can say why; see InsufficientCreditsError.
 	CodeInsufficientCredits = "insufficient_credits"
+	// CodeTokenLimitReached means this API key reached the credit limit set for it (402).
+	CodeTokenLimitReached = "token_limit_reached"
 	// CodeVolumeCap is the daily volume cap, which resets at midnight Europe/Berlin (429).
 	CodeVolumeCap = "volume_cap"
 	// CodeBackendUnavailable means the work failed and the charge was given back (503).

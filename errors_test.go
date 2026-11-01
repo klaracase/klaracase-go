@@ -291,7 +291,7 @@ func TestAsErrorMatchesConfigurationError(t *testing.T) {
 var factsCodes = []string{
 	"unauthenticated", "personal_access_token_required", "token_org_missing", "token_org_membership_lost",
 	"pseudonymizer_token_refused", "two_factor_required", "token_ability_missing", "validation_failed",
-	"rate_limited", "insufficient_credits", "volume_cap", "backend_unavailable", "service_unavailable",
+	"rate_limited", "insufficient_credits", "token_limit_reached", "volume_cap", "backend_unavailable", "service_unavailable",
 	"internal_error", "bad_request", "forbidden", "not_found", "method_not_allowed", "conflict",
 	"payload_too_large", "unsupported_media_type", "client_error",
 	"not_found_under_filter", "statute_superseded", "section_not_in_current_text", "document_unavailable",
@@ -327,5 +327,134 @@ func TestEveryCodeOfTheVocabularyHasAConstant(t *testing.T) {
 		if have[code] == "" {
 			t.Errorf("no Code constant for %q", code)
 		}
+	}
+}
+
+func TestInsufficientCreditsReasonAndTopUpURL(t *testing.T) {
+	t.Run("api_budget_empty", func(t *testing.T) {
+		c := problemClient(t, 402, string(fixture(t, "conformance/problems/insufficient_credits.api_budget_empty.json")), nil)
+		_, err := c.Decisions.Search(context.Background(), SearchDecisionsParams{Query: "Untreue"})
+		var e *InsufficientCreditsError
+		if !errors.As(err, &e) {
+			t.Fatalf("got %T", err)
+		}
+		if e.Reason != ReasonAPIBudgetEmpty || e.TopUpURL != "https://klaracase.de/org/billing/api-budget" || e.Cost != 1 || e.Balance != 0 {
+			t.Errorf("error %+v", e)
+		}
+		if IsTokenLimitReached(err) {
+			t.Error("insufficient_credits is not a token limit")
+		}
+	})
+	t.Run("api_budget_not_available has no top up URL", func(t *testing.T) {
+		c := problemClient(t, 402, string(fixture(t, "conformance/problems/insufficient_credits.api_budget_not_available.json")), nil)
+		_, err := c.Decisions.Search(context.Background(), SearchDecisionsParams{Query: "Untreue"})
+		var e *InsufficientCreditsError
+		if !errors.As(err, &e) || e.Reason != ReasonAPIBudgetNotAvailable || e.TopUpURL != "" {
+			t.Errorf("error %+v", e)
+		}
+	})
+	t.Run("a plain 402 has neither", func(t *testing.T) {
+		c := problemClient(t, 402, string(fixture(t, "conformance/problems/insufficient_credits.json")), nil)
+		_, err := c.Decisions.Search(context.Background(), SearchDecisionsParams{Query: "Untreue"})
+		var e *InsufficientCreditsError
+		if !errors.As(err, &e) || e.Reason != "" || e.TopUpURL != "" {
+			t.Errorf("error %+v", e)
+		}
+	})
+	t.Run("an unknown reason is kept", func(t *testing.T) {
+		c := problemClient(t, 402, `{"status":402,"code":"insufficient_credits","cost":1,"balance":0,"reason":"a_future_reason"}`, nil)
+		_, err := c.Decisions.Search(context.Background(), SearchDecisionsParams{Query: "Untreue"})
+		var e *InsufficientCreditsError
+		if !errors.As(err, &e) || e.Reason != "a_future_reason" || string(e.Extra["reason"]) != `"a_future_reason"` {
+			t.Errorf("error %+v", e)
+		}
+	})
+}
+
+func TestTokenLimitReachedError(t *testing.T) {
+	c := problemClient(t, 402, string(fixture(t, "conformance/problems/token_limit_reached.json")), nil)
+	_, err := c.Decisions.Search(context.Background(), SearchDecisionsParams{Query: "Untreue"})
+	var e *TokenLimitReachedError
+	if !errors.As(err, &e) {
+		t.Fatalf("got %T", err)
+	}
+	wantReset := time.Date(2026, 12, 1, 0, 0, 0, 0, time.UTC)
+	if e.Unit != "credits" || e.Cap != 500 || e.Spent != 500 || !e.ResetsAt.Equal(wantReset) ||
+		e.ResetsAtRaw != "2026-12-01T00:00:00+00:00" || e.SettingsURL != "https://klaracase.de/org/api-keys" {
+		t.Errorf("error %+v", e)
+	}
+	if e.Code != CodeTokenLimitReached || e.Status != 402 || string(e.Extra["spent"]) != "500" {
+		t.Errorf("problem %+v", e.Problem)
+	}
+	if !IsTokenLimitReached(err) || !IsInsufficientCredits(err) {
+		t.Error("a token limit is a 402: both helpers must say yes")
+	}
+	var credits *InsufficientCreditsError
+	if !errors.As(err, &credits) || credits.Code != CodeTokenLimitReached || credits.Cost != 0 || credits.Balance != 0 {
+		t.Errorf("errors.As for the 402 type: %+v", credits)
+	}
+	if base, ok := AsError(err); !ok || base.Code != CodeTokenLimitReached {
+		t.Errorf("AsError %+v", base)
+	}
+	if _, ok := e.Extra["cost"]; ok {
+		t.Error("the answer carries no cost, so Extra must not have one")
+	}
+}
+
+func TestTokenLimitReachedToleratesAbsentAndOddMembers(t *testing.T) {
+	c := problemClient(t, 402, `{"status":402,"code":"token_limit_reached","detail":"x"}`, nil)
+	_, err := c.Decisions.Search(context.Background(), SearchDecisionsParams{Query: "Untreue"})
+	var e *TokenLimitReachedError
+	if !errors.As(err, &e) {
+		t.Fatalf("got %T", err)
+	}
+	if e.Unit != "" || e.Cap != 0 || e.Spent != 0 || !e.ResetsAt.IsZero() || e.ResetsAtRaw != "" || e.SettingsURL != "" {
+		t.Errorf("absent members must read as zero values: %+v", e)
+	}
+	c = problemClient(t, 402, `{"status":402,"code":"token_limit_reached","cap":"many","spent":"lots","resets_at":"soon","settings_url":7}`, nil)
+	_, err = c.Decisions.Search(context.Background(), SearchDecisionsParams{Query: "Untreue"})
+	if !errors.As(err, &e) {
+		t.Fatalf("got %T", err)
+	}
+	if e.Cap != 0 || e.Spent != 0 || !e.ResetsAt.IsZero() || e.ResetsAtRaw != "soon" || e.SettingsURL != "" {
+		t.Errorf("odd members: %+v", e)
+	}
+}
+
+func TestPaymentRequiredAnswersAreNeverRetried(t *testing.T) {
+	for _, body := range []string{
+		string(fixture(t, "conformance/problems/token_limit_reached.json")),
+		string(fixture(t, "conformance/problems/insufficient_credits.api_budget_empty.json")),
+	} {
+		var hits atomic.Int32
+		c, _ := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+			hits.Add(1)
+			writeProblem(w, 402, body)
+		}, WithMaxRetries(3))
+		_, err := c.Decisions.Search(context.Background(), SearchDecisionsParams{Query: "Untreue"})
+		base, ok := AsError(err)
+		if !ok {
+			t.Fatalf("got %v", err)
+		}
+		if hits.Load() != 1 || base.Retryable() {
+			t.Errorf("%s: %d requests, retryable %v", base.Code, hits.Load(), base.Retryable())
+		}
+	}
+}
+
+func TestTokenLimitReachedMarshalsForAToolResult(t *testing.T) {
+	c := problemClient(t, 402, string(fixture(t, "conformance/problems/token_limit_reached.json")), nil)
+	_, err := c.Decisions.Search(context.Background(), SearchDecisionsParams{Query: "Untreue"})
+	data, mErr := json.Marshal(err)
+	if mErr != nil {
+		t.Fatal(mErr)
+	}
+	var got map[string]any
+	if json.Unmarshal(data, &got) != nil || got["code"] != "token_limit_reached" || got["spent"] != float64(500) ||
+		got["settings_url"] != "https://klaracase.de/org/api-keys" {
+		t.Errorf("got %s", data)
+	}
+	if _, ok := got["cost"]; ok {
+		t.Errorf("no cost in %s", data)
 	}
 }

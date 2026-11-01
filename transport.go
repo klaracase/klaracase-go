@@ -327,6 +327,16 @@ func (p problem) number(name string) float64 {
 	return f
 }
 
+// tokenLimitReached builds the error of a 402 token_limit_reached answer. A member that is
+// absent or has an unexpected type stays at its zero value; it is still in Extra.
+func (p problem) tokenLimitReached() *TokenLimitReachedError {
+	e := &TokenLimitReachedError{Problem: p.Problem, Unit: p.Unit, Cap: p.Cap, ResetsAt: p.ResetsAt}
+	e.Spent = int(p.number("spent"))
+	_ = json.Unmarshal(p.Extra["resets_at"], &e.ResetsAtRaw)
+	_ = json.Unmarshal(p.Extra["settings_url"], &e.SettingsURL)
+	return e
+}
+
 // readTypedMembers reads the members that only some problems carry. A member that is absent or
 // has an unexpected type stays at its zero value; it is still in Extra.
 func (p *problem) readTypedMembers(members map[string]json.RawMessage) {
@@ -362,9 +372,15 @@ func (p problem) toError(resp *rawResponse, now time.Time) error {
 	case http.StatusUnauthorized:
 		return &AuthenticationError{Problem: base}
 	case http.StatusPaymentRequired:
-		cost := p.number("cost")
-		balance := p.number("balance")
-		return &InsufficientCreditsError{Problem: base, Cost: int(cost), Balance: int(balance)}
+		if base.Code == CodeTokenLimitReached {
+			return p.tokenLimitReached()
+		}
+		e := &InsufficientCreditsError{Problem: base, Cost: int(p.number("cost")), Balance: int(p.number("balance"))}
+		var reason string
+		_ = json.Unmarshal(p.Extra["reason"], &reason)
+		e.Reason = InsufficientCreditsReason(reason)
+		_ = json.Unmarshal(p.Extra["top_up_url"], &e.TopUpURL)
+		return e
 	case http.StatusForbidden:
 		e := &PermissionError{Problem: base}
 		_ = json.Unmarshal(p.Extra["required_ability"], &e.RequiredAbility)

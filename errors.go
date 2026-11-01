@@ -54,11 +54,15 @@ type Error struct {
 	Candidates []Candidate
 	// Successor names the statute that replaced a repealed one (code "statute_superseded").
 	Successor string
-	// Unit says what a volume cap counts, "rows" or "documents" (code "volume_cap").
+	// Unit says what a limit counts: "rows" or "documents" for a volume cap (code "volume_cap"),
+	// always "credits" for an API key limit (code "token_limit_reached").
 	Unit string
-	// Cap is the daily limit that was reached (code "volume_cap").
+	// Cap is the limit that was reached: the daily volume cap (code "volume_cap"), or the credit
+	// limit of the API key for the period (code "token_limit_reached").
 	Cap int
-	// ResetsAt is the time the daily volume cap resets, midnight Europe/Berlin (code "volume_cap").
+	// ResetsAt is the time the limit resets: midnight Europe/Berlin for the daily volume cap, the
+	// end of the credit period of the key for "token_limit_reached". It is the zero time when the
+	// member is absent or cannot be read; the raw text is in Extra["resets_at"].
 	ResetsAt time.Time
 
 	// Extra holds every problem member that is not type, title, status, detail or code.
@@ -227,13 +231,72 @@ type ValidationError struct {
 	Errors map[string][]string
 }
 
-// InsufficientCreditsError is an HTTP 402 answer. Nothing ran and nothing was charged.
+// InsufficientCreditsReason says why an insufficient_credits call could not be paid. The set is
+// open: the API may add values, so keep a default branch. A value that you do not know reads like
+// ReasonAPIBudgetNotAvailable.
+type InsufficientCreditsReason string
+
+// Reasons of an insufficient_credits answer. The API sends a reason only while the prepaid API
+// budget is available.
+const (
+	// ReasonAPIBudgetEmpty means the organization may load an API budget and what it holds does not
+	// cover this call. An organization admin can top it up.
+	ReasonAPIBudgetEmpty InsufficientCreditsReason = "api_budget_empty"
+	// ReasonAPIBudgetNotAvailable means the organization has no API budget to draw on, or its
+	// budget is on hold, and topping up is not possible from its plan.
+	ReasonAPIBudgetNotAvailable InsufficientCreditsReason = "api_budget_not_available"
+	// ReasonPlanCreditsExhausted is reserved for a refusal where the API budget plays no part. The
+	// API does not send it today.
+	ReasonPlanCreditsExhausted InsufficientCreditsReason = "plan_credits_exhausted"
+)
+
+// InsufficientCreditsError is an HTTP 402 answer with the code "insufficient_credits". Nothing ran
+// and nothing was charged. The call is not retried: wait for the next credit period, or ask a
+// human organization admin to act.
+//
+// The 402 answer with the code "token_limit_reached" is a [TokenLimitReachedError]. It matches
+// errors.As for *InsufficientCreditsError too, because it is a 402 as well, but then Cost and
+// Balance are 0 and not meaningful: that answer carries neither.
 type InsufficientCreditsError struct {
 	Problem
 	// Cost is the price of the call in credits.
 	Cost int
-	// Balance is the credits the organization has left in this credit period.
+	// Balance is the plan credits the organization has left in this credit period.
 	Balance int
+	// Reason says why the call could not be paid while the API budget is available. It is ""
+	// when the API sent no reason.
+	Reason InsufficientCreditsReason
+	// TopUpURL is the page where an organization admin loads the API budget. It is "" unless the
+	// organization may load one. It is for a human admin: a program or an AI agent must never open
+	// it or follow it, only show it to its user.
+	TopUpURL string
+}
+
+// TokenLimitReachedError is an HTTP 402 answer with the code "token_limit_reached": this API key
+// used up the credit limit that an organization admin set for it. Nothing ran and nothing was
+// charged. The call is not retried. The key can spend again when the period ends (ResetsAt), or
+// when an admin raises the limit.
+//
+// The answer has no cost and no balance, so this type has no Cost and no Balance. For code that
+// handles every 402 the same way, it also matches errors.As for *InsufficientCreditsError and
+// [IsInsufficientCredits]; that value has a zero Cost and Balance.
+type TokenLimitReachedError struct {
+	Problem
+	// Unit says what the limit counts. It is always "credits".
+	Unit string
+	// Cap is the credit limit of this API key for the period.
+	Cap int
+	// Spent is the credits this key used in the period, plan credits and API budget together.
+	Spent int
+	// ResetsAt is when the credit period of the key ends and its count starts again. It is the
+	// zero time when the member is absent or is not an RFC 3339 time; read ResetsAtRaw then.
+	ResetsAt time.Time
+	// ResetsAtRaw is the resets_at member exactly as the API sent it, or "" when it was absent.
+	ResetsAtRaw string
+	// SettingsURL is the page where an organization admin changes the limit of the key. It is ""
+	// when the answer has none. It is for a human admin: a program or an AI agent must never open
+	// it, only show it to its user.
+	SettingsURL string
 }
 
 // RateLimitError is an HTTP 429 answer. The client already retried, or the wait was too long
@@ -387,6 +450,20 @@ func (e *ValidationError) Unwrap() error { return &e.Problem }
 func (e *InsufficientCreditsError) Unwrap() error { return &e.Problem }
 
 // Unwrap returns the embedded Error so that errors.As finds *Error.
+func (e *TokenLimitReachedError) Unwrap() error { return &e.Problem }
+
+// As lets errors.As find an *InsufficientCreditsError in a token limit answer. The HTTP status
+// 402 is shared, and code written for 402 keeps working. The value has the problem members and
+// zero Cost and Balance.
+func (e *TokenLimitReachedError) As(target any) bool {
+	if t, ok := target.(**InsufficientCreditsError); ok {
+		*t = &InsufficientCreditsError{Problem: e.Problem}
+		return true
+	}
+	return false
+}
+
+// Unwrap returns the embedded Error so that errors.As finds *Error.
 func (e *RateLimitError) Unwrap() error { return &e.Problem }
 
 // Unwrap returns the embedded Error so that errors.As finds *Error.
@@ -447,9 +524,17 @@ func IsRateLimited(err error) bool {
 	return errors.As(err, &target)
 }
 
-// IsInsufficientCredits reports whether err is an HTTP 402 answer.
+// IsInsufficientCredits reports whether err is an HTTP 402 answer: insufficient_credits, and also
+// token_limit_reached.
 func IsInsufficientCredits(err error) bool {
 	var target *InsufficientCreditsError
+	return errors.As(err, &target)
+}
+
+// IsTokenLimitReached reports whether err is the 402 answer "token_limit_reached": the API key
+// reached its own credit limit.
+func IsTokenLimitReached(err error) bool {
+	var target *TokenLimitReachedError
 	return errors.As(err, &target)
 }
 

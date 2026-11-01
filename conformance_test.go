@@ -329,7 +329,7 @@ func TestConformance(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// 102 cases come from the shared pack. The cases named client_validation.* were added by
+	// 106 cases come from the shared pack. The cases named client_validation.* were added by
 	// this SDK for the checks that run on the client.
 	shared := 0
 	for _, file := range files {
@@ -337,8 +337,8 @@ func TestConformance(t *testing.T) {
 			shared++
 		}
 	}
-	if shared != 102 {
-		t.Fatalf("expected 102 shared conformance cases, found %d", shared)
+	if shared != 106 {
+		t.Fatalf("expected 106 shared conformance cases, found %d", shared)
 	}
 	for _, file := range files {
 		data, err := os.ReadFile(file)
@@ -853,7 +853,17 @@ func errorView(err error) map[string]any {
 	}
 	var credits *InsufficientCreditsError
 	if errors.As(err, &credits) {
-		view["cost"], view["balance"] = float64(credits.Cost), float64(credits.Balance)
+		// token_limit_reached matches too, but it has no cost and no balance: those stay absent.
+		var limit *TokenLimitReachedError
+		if !errors.As(err, &limit) {
+			view["cost"], view["balance"] = float64(credits.Cost), float64(credits.Balance)
+			view["reason"], view["top_up_url"] = nilIf(string(credits.Reason)), nilIf(credits.TopUpURL)
+		}
+	}
+	var limit *TokenLimitReachedError
+	if errors.As(err, &limit) {
+		view["unit"], view["cap"], view["spent"] = limit.Unit, float64(limit.Cap), float64(limit.Spent)
+		view["resets_at"], view["settings_url"] = nilIf(limit.ResetsAtRaw), nilIf(limit.SettingsURL)
 	}
 	var rate *RateLimitError
 	if errors.As(err, &rate) {
