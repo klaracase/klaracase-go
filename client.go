@@ -9,6 +9,7 @@ import (
 	"os"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -47,9 +48,15 @@ type Client struct {
 	userAgent     string
 	uaSuffix      string
 	onDeprecation func(DeprecationNotice)
-	sleep         func(ctx context.Context, d time.Duration) error
-	now           func() time.Time
-	optionErr     error
+	logger        *slog.Logger
+	// sleep and now are the one sleeper and the one clock of this client. The retry loop and
+	// WaitUntilReady both use them, and the tests replace them.
+	sleep func(ctx context.Context, d time.Duration) error
+	now   func() time.Time
+	// deprecationSeen holds one *sync.Once per endpoint, so a handler runs once per endpoint
+	// and client.
+	deprecationSeen sync.Map
+	optionErr       error
 }
 
 // Option configures a Client. Pass options to New or NewFromEnv.
@@ -105,10 +112,32 @@ func WithUserAgentSuffix(suffix string) Option {
 }
 
 // WithDeprecationHandler sets the function that is called when an endpoint answers with a
-// Deprecation or Sunset header. The function runs at most once per endpoint in the whole
-// process. The default handler writes one warning with log/slog.
+// Deprecation or Sunset header. The function runs at most once per endpoint and client. The
+// default writes one warning to the logger of the client (see WithLogger).
 func WithDeprecationHandler(h func(DeprecationNotice)) Option {
 	return func(c *Client) { c.onDeprecation = h }
+}
+
+// WithLogger sets the logger of the client. The client logs a debug line for every retry
+// (method, path, status, attempt and wait) and a warning for a deprecated endpoint. It never
+// logs the token, a query string, a request body or a response body. Without this option the
+// client uses slog.Default(), which hides debug lines unless you lower its level.
+func WithLogger(l *slog.Logger) Option {
+	return func(c *Client) {
+		if l == nil {
+			c.setOptionErr("WithLogger: the logger is nil")
+			return
+		}
+		c.logger = l
+	}
+}
+
+// log returns the logger of the client.
+func (c *Client) log() *slog.Logger {
+	if c.logger != nil {
+		return c.logger
+	}
+	return slog.Default()
 }
 
 // withSleep replaces the sleep function used for retries and polling. Tests only.
@@ -158,9 +187,6 @@ func New(token string, opts ...Option) (*Client, error) {
 	}
 	c.baseURL = base
 	c.userAgent = userAgent(c.uaSuffix)
-	if c.onDeprecation == nil {
-		c.onDeprecation = defaultDeprecationHandler
-	}
 	c.Decisions = &DecisionsService{c: c}
 	c.Norms = &NormsService{c: c}
 	c.Datapackages = &DatapackagesService{c: c}
@@ -241,9 +267,4 @@ func sleepContext(ctx context.Context, d time.Duration) error {
 	case <-t.C:
 		return nil
 	}
-}
-
-func defaultDeprecationHandler(n DeprecationNotice) {
-	slog.Warn("klaracase: endpoint is deprecated",
-		"endpoint", n.Endpoint, "deprecation", n.Deprecation, "sunset", n.Sunset, "link", n.Link)
 }

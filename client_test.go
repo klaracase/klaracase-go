@@ -306,7 +306,6 @@ func TestCitationCheckResponseIsTyped(t *testing.T) {
 }
 
 func TestDeprecationDefaultHandlerLogsOnce(t *testing.T) {
-	resetDeprecationState()
 	var mu sync.Mutex
 	var lines []string
 	old := slog.Default()

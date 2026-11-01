@@ -360,7 +360,6 @@ func runConformanceCase(t *testing.T, caseDir string, cs confCase) {
 	for k, v := range cs.SDK.Env {
 		t.Setenv(k, v)
 	}
-	resetDeprecationState()
 
 	// 2. mock server
 	mock := &confMock{caseDir: caseDir, responses: cs.Responses, repeatLast: cs.Runner.RepeatLastResponse}

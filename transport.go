@@ -7,10 +7,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"math"
 	"math/rand/v2"
 	"net"
 	"net/http"
+	"net/url"
 	"sync"
 	"time"
 )
@@ -39,9 +41,6 @@ type DeprecationNotice struct {
 	// Link is the raw Link header ("" when absent), which may point to the migration notes.
 	Link string
 }
-
-// deprecationSeen holds one *sync.Once per endpoint for the whole process.
-var deprecationSeen sync.Map
 
 // request describes one API call before it is sent.
 type request struct {
@@ -93,7 +92,9 @@ func (c *Client) run(ctx context.Context, r request, out any) error {
 			if r.method != http.MethodGet || attempt >= maxRetries || ctx.Err() != nil {
 				return err
 			}
-			if serr := c.sleep(ctx, backoff(attempt)); serr != nil {
+			wait := backoff(attempt)
+			c.logRetry(r, 0, attempt, wait, err)
+			if serr := c.sleep(ctx, wait); serr != nil {
 				return c.transportError(ctx, serr)
 			}
 			continue
@@ -114,6 +115,7 @@ func (c *Client) run(ctx context.Context, r request, out any) error {
 		if !stated {
 			wait = backoff(attempt)
 		}
+		c.logRetry(r, resp.status, attempt, wait, nil)
 		if serr := c.sleep(ctx, wait); serr != nil {
 			return c.transportError(ctx, serr)
 		}
@@ -190,17 +192,44 @@ func backoff(n int) time.Duration {
 	return time.Duration(rand.Float64() * ceiling)
 }
 
-// noteDeprecation calls the deprecation handler once per endpoint and process when the
-// answer carries a Deprecation or Sunset header.
+// noteDeprecation reports a deprecated endpoint once per endpoint and client, when the answer
+// carries a Deprecation or Sunset header. It calls the handler, or logs a warning when there is
+// none.
 func (c *Client) noteDeprecation(endpoint string, h http.Header) {
 	dep, sun := h.Get("Deprecation"), h.Get("Sunset")
 	if dep == "" && sun == "" {
 		return
 	}
-	once, _ := deprecationSeen.LoadOrStore(endpoint, new(sync.Once))
+	once, _ := c.deprecationSeen.LoadOrStore(endpoint, new(sync.Once))
 	once.(*sync.Once).Do(func() {
-		c.onDeprecation(DeprecationNotice{Endpoint: endpoint, Deprecation: dep, Sunset: sun, Link: h.Get("Link")})
+		notice := DeprecationNotice{Endpoint: endpoint, Deprecation: dep, Sunset: sun, Link: h.Get("Link")}
+		if c.onDeprecation != nil {
+			c.onDeprecation(notice)
+			return
+		}
+		c.log().Warn("klaracase: endpoint is deprecated",
+			"endpoint", notice.Endpoint, "deprecation", notice.Deprecation, "sunset", notice.Sunset, "link", notice.Link)
 	})
+}
+
+// logRetry writes the debug line for one retry. It carries no token and no query string.
+func (c *Client) logRetry(r request, status, attempt int, wait time.Duration, cause error) {
+	log := c.log()
+	if !log.Enabled(context.Background(), slog.LevelDebug) {
+		return
+	}
+	attrs := []any{
+		"method", r.method, "path", r.path, "status", status,
+		"attempt", attempt + 1, "wait", wait,
+	}
+	if cause != nil {
+		var urlErr *url.Error
+		if errors.As(cause, &urlErr) {
+			cause = urlErr.Err
+		}
+		attrs = append(attrs, "cause", cause.Error())
+	}
+	log.Debug("klaracase: retrying", attrs...)
 }
 
 // envelopeSetter is implemented by every response type through the embedded Envelope.
