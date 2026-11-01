@@ -23,7 +23,7 @@ type ResponseMeta struct {
 type Credits struct {
 	// Metered is false when the call was not billed.
 	Metered bool `json:"metered"`
-	// Cost is the credits this call cost, 0 for a free call or a repeat in the same month.
+	// Cost is the credits this call cost, 0 for a free call or a repeat in the same credit period.
 	Cost *int `json:"cost"`
 	// CreditsRemaining is the balance of the organization after the call.
 	CreditsRemaining *int `json:"credits_remaining"`
@@ -138,7 +138,7 @@ func (e *Envelope) CreditsRemaining() (int64, bool) {
 }
 
 // Cost returns the credits this call cost and true. Cost is 0 for a free call and for a repeat
-// in the same month. It returns false when the body carries no credits, or when the call was
+// in the same credit period. It returns false when the body carries no credits, or when the call was
 // not metered.
 func (e *Envelope) Cost() (int64, bool) {
 	if e.Credits == nil || e.Credits.Cost == nil {

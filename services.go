@@ -127,7 +127,7 @@ func (s *DatapackagesService) Create(ctx context.Context, p CreateDatapackagePar
 
 // Create checks the citations of a text or of an uploaded document (POST /citation-checks).
 // The answer is the finished run. It costs 2 to 4 credits by length; the same text again in
-// the same month costs nothing. Exactly one of Text and DocumentID must be set, otherwise
+// the same credit period costs nothing. Exactly one of Text and DocumentID must be set, otherwise
 // Create returns a *ValidationError with code "client_validation" and sends nothing.
 func (s *CitationChecksService) Create(ctx context.Context, p CreateCitationCheckParams, opts ...RequestOption) (*CitationCheckRun, error) {
 	if err := validateCitationCheck(p); err != nil {

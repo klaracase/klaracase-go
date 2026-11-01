@@ -24,7 +24,7 @@ const (
 //
 // maxPages is required, at least 1, and is lowered to what the API serves (page 10 at most).
 // Each page is a separate request, so a long iteration spends rate limit and may spend
-// credits: the contract bills one credit per distinct query and filter set per month, and
+// credits: the contract bills one credit per distinct query and filter set per credit period, and
 // later pages of the same search should cost nothing more, but check Credits on a response
 // before you rely on that. The iteration stops after maxPages pages, on an empty page, or when the
 // candidate pool is used up. An error is yielded once, and then the iteration ends. Breaking

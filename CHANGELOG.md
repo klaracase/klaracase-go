@@ -39,6 +39,10 @@ This project follows [Semantic Versioning](https://semver.org/).
 - CI: Go 1.24, oldstable and stable; staticcheck, govulncheck, golangci-lint v2, `go mod tidy`
   check, shuffled race tests with coverage; actions pinned by SHA; Dependabot for actions.
 
+### Docs
+
+- Docs: credit period wording. Credits renew per credit period: the UTC calendar month for free organizations, the paid billing period for subscribers. Unused credits do not roll over. The docs said "calendar month" for every organization.
+
 ### Changed
 
 - Before 0.1.0 is published: `WaitParams` is gone (use `WithPollInterval`), `SearchHit` is split
@@ -50,4 +54,4 @@ This project follows [Semantic Versioning](https://semver.org/).
 ### Notes
 
 - Pages of a paginated search count against the rate limit. By the contract, they should cost no
-  extra credits in the same month. Check `Credits` on a response before you rely on it.
+  extra credits in the same credit period. Check `Credits` on a response before you rely on it.

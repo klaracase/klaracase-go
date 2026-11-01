@@ -161,7 +161,7 @@ The API checks against the corpus only. It does not ask an external register, so
 is weaker evidence here than in the Klaracase web app.
 
 The price is `max(2, ceil(characters / 5000))` credits: 2 up to 10,000 characters, 3 up to 15,000
-and 4 at 20,000. The same text checked again in the same month costs nothing more.
+and 4 at 20,000. The same text checked again in the same credit period costs nothing more.
 
 ### Check a file
 
@@ -283,7 +283,7 @@ looks like data is worse than an error you can handle. If you need to carry on a
 - The client never retries `402` or any other `4xx`. It does not retry `500` or `502` either.
 - A network error is retried on `GET` only. A `POST` whose connection dropped after the request
   was sent is not retried: the request may have run. Repeating a paid call by hand is free in the
-  same month, because one charge covers the same operation on the same subject.
+  same credit period, because one charge covers the same operation on the same subject.
 
 Change the limit with `klaracase.WithMaxRetries(n)`, or for one call with `WithRequestMaxRetries(n)`. Zero turns retries off.
 
@@ -374,7 +374,7 @@ or when you break out of the loop. `CitationsAll` yields the `references`, then 
 rows of each page, and only works at depth 1.
 
 Credits: each page is a separate request and counts against the rate limit of 60 per minute. By
-the contract, one charge covers one operation on one subject per organization and calendar month,
+the contract, one charge covers one operation on one subject per organization and credit period,
 so later pages of the same query should cost nothing more. Look at `res.Credits` on a response if
 you need to be sure. Keep `maxPages` low.
 
@@ -422,8 +422,10 @@ this logger too (or to `slog.Default()` when you set none).
 Most calls cost credits. Search, `Decisions.Get` and `Norms.Get` cost 1 credit,
 `Decisions.Citations` costs 2, `Datapackages.Create` costs 5, and a citation check costs as shown
 above. Uploads, `CitationChecks.Get`, `Corpus.Coverage` and `Corpus.Facets` are free. One charge
-covers one operation on one subject per organization and calendar month (UTC). The same call
-again in that month costs 0. The API sends no `Idempotency-Key` header.
+covers one operation on one subject per organization and credit period. The same call
+again in that credit period costs 0. The API sends no `Idempotency-Key` header.
+
+Credits renew per credit period: the UTC calendar month for free organizations, the paid billing period for subscribers. Unused credits do not roll over.
 
 The rate limit is 60 requests per minute per token. The calls `Datapackages.Create`,
 `CitationChecks.Create` and `CitationCheckDocuments.Upload` have an extra limit of 10 per minute.

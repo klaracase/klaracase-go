@@ -232,7 +232,7 @@ type InsufficientCreditsError struct {
 	Problem
 	// Cost is the price of the call in credits.
 	Cost int
-	// Balance is the credits the organization has left this month.
+	// Balance is the credits the organization has left in this credit period.
 	Balance int
 }
 
@@ -329,7 +329,7 @@ func (e *ConfigurationError) Unwrap() error { return &e.Problem }
 
 // Retryable reports whether the same call may be sent again. A transport error means no answer
 // arrived, so the call may or may not have run: a repeated GET is safe, and a repeated paid
-// call costs nothing more in the same month. It is false when the cause is a canceled context.
+// call costs nothing more in the same credit period. It is false when the cause is a canceled context.
 func (e *TransportError) Retryable() bool {
 	return !errors.Is(e.Err, context.Canceled)
 }
