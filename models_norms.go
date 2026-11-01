@@ -16,7 +16,7 @@ type NormLaw struct {
 	LawLevel string `json:"law_level"`
 	// Jurisdiction is DE or EU.
 	Jurisdiction string `json:"jurisdiction"`
-	// SourceURL is the address of the official source.
+	// SourceURL is the address of the page the norm text comes from.
 	SourceURL string `json:"source_url"`
 	// UpstreamStatus is the state of the source, for example "confirmed".
 	UpstreamStatus string `json:"upstream_status"`

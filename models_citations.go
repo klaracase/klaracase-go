@@ -130,7 +130,7 @@ type Finding struct {
 	Type string `json:"type"`
 	// Role is the role of the citation, or nil.
 	Role *string `json:"role"`
-	// Verdict is the verdict. VerdictNotFound is absence of evidence, not a claim of fabrication.
+	// Verdict is the verdict. VerdictNotFound is absence of evidence in the corpus, nothing more.
 	Verdict Verdict `json:"verdict"`
 	// ExternalStatus says what the external register check did, for example "skipped".
 	ExternalStatus string `json:"external_status"`

@@ -133,8 +133,8 @@ for _, f := range run.Findings {
 		// or a legal claim is right.
 		fmt.Println("found:", f.Canonical)
 	case klaracase.VerdictNotFound:
-		// The citation was not found in the corpus. This is not a claim that
-		// it is fabricated. Check it by hand.
+		// The citation was not found in the corpus. This does not mean that
+		// it is invented. Check it by hand.
 		fmt.Printf("not found in the corpus: %q at %d-%d\n", f.RawText, f.StartOffset, f.EndOffset)
 	default:
 		fmt.Println(f.Verdict, f.Canonical)
@@ -331,6 +331,17 @@ make smoke  # calls the two free endpoints; needs KLARACASE_API_TOKEN; not part 
 
 The tests replay the shared conformance cases in `testdata/conformance/` against a local
 `httptest` server. See `CONTRIBUTING.md`.
+
+## Stability and privacy
+
+This SDK is 0.x and tracks API release 0.95.0. Minor versions may change the public surface until
+1.0. Every change is listed in [CHANGELOG.md](CHANGELOG.md). All Klaracase SDKs bump together when
+the API contract changes.
+
+The SDK sends no telemetry. The only thing it adds to a request is the User-Agent header
+`klaracase-go/<version> go/<version>`, for example `klaracase-go/0.1.0 go/1.24.2`.
+
+Klaracase is not affiliated with any court or with the federal government.
 
 ## Links
 

@@ -89,7 +89,7 @@ func ExampleCitationChecksService_Create() {
 			// The citation exists in the corpus. This does not prove that a quote or a legal claim is right.
 			fmt.Println("found:", f.Canonical)
 		case klaracase.VerdictNotFound:
-			// Not found in the corpus. This is not a claim that the citation is fabricated. Check it by hand.
+			// Not found in the corpus. This does not mean the citation is invented. Check it by hand.
 			fmt.Println("not found in the corpus:", f.RawText)
 		default:
 			fmt.Println(f.Verdict, f.Canonical)
