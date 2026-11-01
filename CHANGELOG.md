@@ -39,6 +39,20 @@ This project follows [Semantic Versioning](https://semver.org/).
 - CI: Go 1.24, oldstable and stable; staticcheck, govulncheck, golangci-lint v2, `go mod tidy`
   check, shuffled race tests with coverage; actions pinned by SHA; Dependabot for actions.
 
+- API 0.96.0, additive: `Credits.APIBudget` (`Cents`, `RateCentsPerCredit`, `CreditsAtRate`),
+  `nil` when the organization has no budget and may not load one; unknown keys are kept.
+  `InsufficientCreditsError` gains `Reason` (open type `InsufficientCreditsReason`, with
+  `ReasonAPIBudgetEmpty`, `ReasonAPIBudgetNotAvailable` and the reserved
+  `ReasonPlanCreditsExhausted`) and `TopUpURL`. New `TokenLimitReachedError` (`Unit`, `Cap`,
+  `Spent`, `ResetsAt`, `ResetsAtRaw`, `SettingsURL`; no `Cost`, no `Balance`), `IsTokenLimitReached`
+  and `CodeTokenLimitReached`. A token limit also matches `errors.As` for
+  `*InsufficientCreditsError` and `IsInsufficientCredits`. Neither 402 is retried. The URLs are for
+  a human admin; the SDK never opens them.
+- `agenttools`: the slim credits carry `api_budget`; the error text of `insufficient_credits` and
+  `token_limit_reached` adds `next_step` (stop, do not open a link, tell the user).
+- Conformance pack: 106 cases (four new for 0.96.0). README section "Credits, API budget and
+  limits".
+
 ### Docs
 
 - Docs: credit period wording. Credits renew per credit period: the UTC calendar month for free organizations, the paid billing period for subscribers. Unused credits do not roll over. The docs said "calendar month" for every organization.

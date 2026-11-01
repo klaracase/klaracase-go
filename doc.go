@@ -42,6 +42,7 @@
 // body unchanged: marshal Raw when you need lossless JSON, because marshaling the typed struct
 // writes the modeled keys only. Meta holds the HTTP status, the API release and the duration.
 // Credits holds the credit accounting of the call; use CreditsRemaining and Cost to read it.
+// Credits.APIBudget is the optional prepaid API budget, and it is nil when there is none.
 // A success body that does not fit the types returns a [DecodeError] that keeps the body.
 //
 // # Per-call options
@@ -74,6 +75,10 @@
 //	if errors.As(err, &credits) {
 //		fmt.Println("this call costs", credits.Cost, "credits, balance", credits.Balance)
 //	}
+//
+// A 402 answer with the code token_limit_reached (the API key reached its own credit limit) is a
+// [TokenLimitReachedError]. An insufficient_credits answer may carry a Reason and a TopUpURL.
+// Both URLs are for a human organization admin: show them to your user, never open them.
 //
 // # Retries and time limits
 //

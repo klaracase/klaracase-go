@@ -199,10 +199,13 @@ helper for the common cases:
 ```go
 res, err := client.Decisions.Search(ctx, klaracase.SearchDecisionsParams{Query: "Untreue"})
 
+var limit *klaracase.TokenLimitReachedError
 var credits *klaracase.InsufficientCreditsError
 switch {
 case err == nil:
 	_ = res
+case errors.As(err, &limit): // test this before InsufficientCreditsError, which matches too
+	fmt.Printf("this API key used %d of %d credits\n", limit.Spent, limit.Cap)
 case errors.As(err, &credits):
 	fmt.Printf("this call costs %d credits, the balance is %d\n", credits.Cost, credits.Balance)
 case klaracase.IsRateLimited(err):
@@ -215,13 +218,14 @@ default:
 }
 ```
 
-The helpers are `IsNotFound`, `IsRateLimited`, `IsInsufficientCredits`, `IsValidation` and
-`IsPermission`.
+The helpers are `IsNotFound`, `IsRateLimited`, `IsInsufficientCredits`, `IsTokenLimitReached`,
+`IsValidation` and `IsPermission`.
 
 | Type | When | Extra fields |
 |---|---|---|
 | `*AuthenticationError` | 401 | |
-| `*InsufficientCreditsError` | 402 | `Cost`, `Balance` |
+| `*InsufficientCreditsError` | 402, code `insufficient_credits` | `Cost`, `Balance`, `Reason`, `TopUpURL` |
+| `*TokenLimitReachedError` | 402, code `token_limit_reached` | `Unit`, `Cap`, `Spent`, `ResetsAt`, `ResetsAtRaw`, `SettingsURL` |
 | `*PermissionError` | 403 | `RequiredAbility` |
 | `*NotFoundError` | 404 | |
 | `*ConflictError` | 409 | |
@@ -254,7 +258,7 @@ if e, ok := klaracase.AsError(err); ok {
 something that is not a problem document (an HTML 502 page, for example), the code is `unknown`
 and `Detail` holds the first 1,000 characters of the body. `Candidates`, `Successor`, `Unit`,
 `Cap` and `ResetsAt` hold the extra members of the codes that carry them, for example the list of
-decisions behind an ambiguous Aktenzeichen.
+decisions behind an ambiguous Aktenzeichen. See "Credits, API budget and limits" for the 402 errors.
 
 `RetryAfter` reads `retry_after_seconds` from the body first. It then reads the `Retry-After`
 header, as seconds or as an HTTP date.
@@ -306,10 +310,10 @@ ends, the call returns a `*TransportError` or `*TimeoutError` that wraps `contex
 Each method returns a struct with the documented keys of the answer, with nothing renamed or
 reordered. Three things come with every response:
 
-- `res.Credits` has `Metered`, `Cost` and `CreditsRemaining`. `Cost` and `CreditsRemaining` are
-  pointers, because a superadmin call is not metered and both are `null`. Use
-  `res.CreditsRemaining()` and `res.Cost()` instead: each returns `(int64, bool)`, and the bool is
-  false when the value is absent.
+- `res.Credits` has `Metered`, `Cost`, `CreditsRemaining` and `APIBudget`. `Cost` and
+  `CreditsRemaining` are pointers, because a superadmin call is not metered and both are `null`.
+  Use `res.CreditsRemaining()` and `res.Cost()` instead: each returns `(int64, bool)`, and the
+  bool is false when the value is absent. `APIBudget` is a pointer too: see the next section.
 - `res.Meta` has `Status`, `APIRelease` (the `X-Klaracase-Api-Release` header) and `Duration`.
 - `res.Extra` holds every top level key the client does not model, as `json.RawMessage`. Nested rows
   have their own `Extra`. `res.Raw` is the whole body, unchanged. Marshal `Raw` when you need
@@ -417,7 +421,7 @@ with the method, the path, the status, the attempt, the wait and the cause. The 
 the token, the query string, a request body or a response body. The deprecation warning goes to
 this logger too (or to `slog.Default()` when you set none).
 
-## Credits
+## Credits, API budget and limits
 
 Most calls cost credits. Search, `Decisions.Get` and `Norms.Get` cost 1 credit,
 `Decisions.Citations` costs 2, `Datapackages.Create` costs 5, and a citation check costs as shown
@@ -429,6 +433,75 @@ Credits renew per credit period: the UTC calendar month for free organizations, 
 
 The rate limit is 60 requests per minute per token. The calls `Datapackages.Create`,
 `CitationChecks.Create` and `CitationCheckDocuments.Upload` have an extra limit of 10 per minute.
+Prices and plan sizes are on https://klaracase.de/preise.
+
+### Plan credits and the API budget
+
+Every plan has plan credits for each credit period. The Professional and Enterprise plans can
+also have a prepaid API budget. It is optional. It pays for calls on the API and on MCP only, and
+only after the plan credits are used up. The web app never draws on it. The budget does not expire.
+A call is paid in whole, from the plan credits or from the budget, never in part.
+
+Each answer has `res.Credits`:
+
+- `Cost` counts the plan credits and the budget credits of this call together.
+- `CreditsRemaining` is the plan credits left in this credit period. It never counts the budget.
+- `APIBudget` is `nil` when the organization has no budget and may not load one. Always test it
+  for `nil`: `nil` is not a budget of zero. When it is set, `Cents` is the budget in euro cents
+  after the call (it can be negative after a lost payment), `RateCentsPerCredit` is what one
+  credit costs from the budget, and `CreditsAtRate` is how many further credits the spendable
+  part of the budget pays for. Unknown keys inside it are kept in `Extra`.
+
+```go
+if b := res.Credits.APIBudget; b != nil {
+	fmt.Println("budget pays for", b.CreditsAtRate, "more credits")
+}
+```
+
+### Limits per API key
+
+An organization admin can set a credit limit on each API key. A key that reached its limit cannot
+spend more in that period, even when the organization still has credits.
+
+### Refusals, and what a program should do
+
+Every refusal below is HTTP 402. Nothing ran and nothing was charged. The client never retries a
+402, because the same call gets the same answer. A program should stop, and report to its user.
+
+| Error | What it means | What the program does |
+|---|---|---|
+| `*InsufficientCreditsError`, `Reason` empty | The plan credits are used up. | Stop. Tell the user. The credits come back in the next credit period. |
+| `*InsufficientCreditsError`, `Reason` `api_budget_empty` | The plan credits are used up, and the API budget does not cover this call. An admin can load budget. | Stop. Tell the user that an admin can top up the API budget. Show `TopUpURL` to the user. |
+| `*InsufficientCreditsError`, `Reason` `api_budget_not_available` | The plan credits are used up. The organization has no API budget to draw on, or it is on hold. | Stop. Tell the user. A plan with an API budget is described at https://klaracase.de/preise. |
+| `*InsufficientCreditsError`, `Reason` `plan_credits_exhausted` | Reserved. The API does not send it today. | Treat it like `api_budget_not_available`. |
+| `*TokenLimitReachedError` | This API key used up its own credit limit. `Cap` is the limit, `Spent` the use, `ResetsAt` the end of the period. | Stop. Tell the user. The key can spend again at `ResetsAt`, or when an admin raises the limit at `SettingsURL`. |
+
+`Reason` is an open type. If the API sends a value this SDK does not know, treat it like
+`api_budget_not_available`. A 402 `insufficient_credits` from an older API has no reason.
+
+```go
+var credits *klaracase.InsufficientCreditsError
+var limit *klaracase.TokenLimitReachedError
+switch {
+case errors.As(err, &limit): // test first: a token limit matches InsufficientCreditsError too
+	fmt.Printf("this API key used %d of %d credits; it resets at %s\n", limit.Spent, limit.Cap, limit.ResetsAtRaw)
+	fmt.Println("an admin can change the limit:", limit.SettingsURL) // show it, never open it
+case errors.As(err, &credits):
+	fmt.Println("credits used up; reason:", credits.Reason)
+	if credits.TopUpURL != "" {
+		fmt.Println("an admin can top up the API budget:", credits.TopUpURL) // show it, never open it
+	}
+}
+```
+
+`TopUpURL` and `SettingsURL` are pages for a human organization admin. Show them to your user.
+A program or an AI agent must never open them or follow them. The SDK never does.
+
+A `*TokenLimitReachedError` has no `Cost` and no `Balance`, because the answer carries neither.
+It still matches `errors.As(err, &credits)` and `IsInsufficientCredits`, because it is a 402, and
+then `Cost` and `Balance` are 0. Use `errors.As` with `*TokenLimitReachedError` or
+`IsTokenLimitReached` to tell the two apart. `ResetsAt` is a `time.Time`; `ResetsAtRaw` is the
+text as the API sent it.
 
 ## Agent tools
 
@@ -450,6 +523,11 @@ text unless the input sets `max_chars`, and `check_citations` returns the verdic
 offsets, not the whole run. An API error is not a Go error. It becomes the text
 `{"error":{"code":...,"status":...,"detail":...}}`, so the model can read it and act. `Call`
 returns a Go error only for an unknown tool name and for a canceled context.
+
+`insufficient_credits` and `token_limit_reached` are never retried. Their error text keeps every
+member (`reason`, `top_up_url`, `spent`, `settings_url` and so on) and adds `next_step`: the model
+must stop, must not open any link, and must tell its user. The slim credits of a result carry
+`api_budget` when the answer has one.
 
 To connect an MCP client instead, use `https://klaracase.de/mcp`. The same token works there.
 This package does not implement MCP.
