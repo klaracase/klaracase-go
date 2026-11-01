@@ -1,0 +1,16 @@
+# Go
+*.test
+*.out
+coverage.txt
+/bin/
+/dist/
+
+# Editors and OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# Local secrets
+.env
+.env.*

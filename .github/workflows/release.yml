@@ -1,0 +1,37 @@
+name: release
+
+# A Go module needs no publish step. The Go module proxy (GOPROXY, proxy.golang.org)
+# picks up a version when someone requests it after the tag exists on GitHub.
+# This workflow only checks that the tag matches the Version constant and that the tests pass.
+# TODO: when the repository is public and has a stable tag, ask the proxy once with
+#   GOPROXY=https://proxy.golang.org go list -m github.com/klaracase/klaracase-go@<tag>
+# so that pkg.go.dev shows the release at once. No registry account or secret is needed.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+      - name: tag matches Version constant
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          version="$(sed -n 's/^const Version = "\(.*\)"$/\1/p' version.go)"
+          echo "tag=$tag Version=$version"
+          if [ -z "$version" ] || [ "$tag" != "$version" ]; then
+            echo "The tag v$tag does not match the Version constant ($version) in version.go." >&2
+            exit 1
+          fi
+      - name: vet
+        run: go vet ./...
+      - name: test
+        run: go test -race -count=1 ./...
