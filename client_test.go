@@ -96,8 +96,9 @@ func TestConstructionErrors(t *testing.T) {
 			if !errors.As(err, &cfg) {
 				t.Fatalf("got %v, want *ConfigurationError", err)
 			}
-			if _, ok := AsError(err); ok {
-				t.Error("a ConfigurationError must not be an *Error")
+			base, ok := AsError(err)
+			if !ok || base.Code != CodeConfiguration || base.Status != 0 || base.Detail != cfg.Message {
+				t.Errorf("AsError must find the configuration problem, got %+v, %v", base, ok)
 			}
 		})
 	}
@@ -371,24 +372,6 @@ func TestUploadRetrySendsTheWholeFileAgain(t *testing.T) {
 	}
 	if len(*slept) != 1 || (*slept)[0] != 3*time.Second {
 		t.Errorf("slept %v, want [3s]", *slept)
-	}
-}
-
-func TestRetryAfterHTTPDateFallsBackToBackoff(t *testing.T) {
-	var n atomic.Int32
-	client, slept := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
-		if n.Add(1) == 1 {
-			w.Header().Set("Retry-After", "Wed, 21 Oct 2026 07:28:00 GMT")
-			w.WriteHeader(503)
-			return
-		}
-		_, _ = io.WriteString(w, "{}")
-	})
-	if _, err := client.Corpus.Coverage(context.Background(), CoverageParams{}); err != nil {
-		t.Fatal(err)
-	}
-	if len(*slept) != 1 || (*slept)[0] > 500*time.Millisecond {
-		t.Errorf("slept %v, want one backoff of at most 500ms", *slept)
 	}
 }
 

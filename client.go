@@ -123,7 +123,7 @@ func withNow(f func() time.Time) Option {
 
 func (c *Client) setOptionErr(msg string) {
 	if c.optionErr == nil {
-		c.optionErr = &ConfigurationError{Message: msg}
+		c.optionErr = newConfigurationError(msg)
 	}
 }
 
@@ -132,10 +132,10 @@ func (c *Client) setOptionErr(msg string) {
 func New(token string, opts ...Option) (*Client, error) {
 	token = strings.TrimSpace(token)
 	if token == "" {
-		return nil, &ConfigurationError{Message: "no API token: pass one to New, or use NewFromEnv with the " + EnvToken + " environment variable"}
+		return nil, newConfigurationError("no API token: pass one to New, or use NewFromEnv with the " + EnvToken + " environment variable")
 	}
 	if strings.ContainsAny(token, " \t\r\n") {
-		return nil, &ConfigurationError{Message: "the API token contains whitespace"}
+		return nil, newConfigurationError("the API token contains whitespace")
 	}
 	c := &Client{
 		token:      token,
@@ -175,7 +175,7 @@ func New(token string, opts ...Option) (*Client, error) {
 func NewFromEnv(opts ...Option) (*Client, error) {
 	token := strings.TrimSpace(os.Getenv(EnvToken))
 	if token == "" {
-		return nil, &ConfigurationError{Message: "the " + EnvToken + " environment variable is not set or is empty"}
+		return nil, newConfigurationError("the " + EnvToken + " environment variable is not set or is empty")
 	}
 	return New(token, opts...)
 }
@@ -211,10 +211,10 @@ func normalizeBaseURL(raw string) (string, error) {
 	trimmed := strings.TrimRight(strings.TrimSpace(raw), "/")
 	u, err := url.Parse(trimmed)
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-		return "", &ConfigurationError{Message: fmt.Sprintf("the base URL %q is not an http or https URL", raw)}
+		return "", newConfigurationError(fmt.Sprintf("the base URL %q is not an http or https URL", raw))
 	}
 	if u.RawQuery != "" || u.Fragment != "" {
-		return "", &ConfigurationError{Message: "the base URL must not have a query or a fragment"}
+		return "", newConfigurationError("the base URL must not have a query or a fragment")
 	}
 	return trimmed, nil
 }

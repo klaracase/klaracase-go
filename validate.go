@@ -1,6 +1,7 @@
 package klaracase
 
 import (
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -56,10 +57,11 @@ func (f fieldErrors) err() error {
 	for _, name := range names {
 		parts = append(parts, name+": "+strings.Join(f[name], "; "))
 	}
-	return &ValidationError{
-		Problem: Problem{Code: CodeClientValidation, Detail: strings.Join(parts, ". ")},
-		Errors:  map[string][]string(f),
+	problem := Problem{Code: CodeClientValidation, Detail: strings.Join(parts, ". ")}
+	if encoded, err := json.Marshal(map[string][]string(f)); err == nil {
+		problem.Extra = map[string]json.RawMessage{"errors": encoded}
 	}
+	return &ValidationError{Problem: problem, Errors: map[string][]string(f)}
 }
 
 // clientValidation builds the error for a call that is wrong before any request is sent.

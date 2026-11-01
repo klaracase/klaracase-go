@@ -11,8 +11,6 @@ import (
 	"math/rand/v2"
 	"net"
 	"net/http"
-	"strconv"
-	"strings"
 	"sync"
 	"time"
 )
@@ -67,6 +65,20 @@ type rawResponse struct {
 // do sends the request and decodes a 2xx answer into out. It retries as the design says:
 // 429 and 503 on every method, transport errors on GET only.
 func (c *Client) do(ctx context.Context, r request, out any) error {
+	err := c.run(ctx, r, out)
+	var cfg *ConfigurationError
+	if err == nil || errors.As(err, &cfg) {
+		return err
+	}
+	if base, ok := AsError(err); ok {
+		base.Method = r.method
+		base.URL = c.baseURL + r.path
+	}
+	return err
+}
+
+// run is do without the stamp of method and URL on the error.
+func (c *Client) run(ctx context.Context, r request, out any) error {
 	cfg, err := newRequestConfig(r.opts)
 	if err != nil {
 		return err
@@ -91,11 +103,11 @@ func (c *Client) do(ctx context.Context, r request, out any) error {
 			return decodeSuccess(resp, out)
 		}
 		parsed := parseProblem(resp)
-		apiErr := parsed.toError(resp)
+		apiErr := parsed.toError(resp, c.now())
 		if (resp.status != http.StatusTooManyRequests && resp.status != http.StatusServiceUnavailable) || attempt >= maxRetries {
 			return apiErr
 		}
-		wait, stated := parsed.statedWait(resp.header)
+		wait, stated := statedWaitOf(parsed.Extra, resp.header, c.now())
 		if stated && wait > maxServerWait {
 			return apiErr
 		}
@@ -204,6 +216,7 @@ func decodeSuccess(resp *rawResponse, out any) error {
 				Code:       CodeInvalidResponse,
 				Detail:     "the answer could not be decoded: " + err.Error(),
 				APIRelease: resp.header.Get("X-Klaracase-Api-Release"),
+				Header:     safeHeader(resp.header),
 			},
 			Err:  err,
 			Body: truncateRunes(string(resp.body), maxErrorDetail),
@@ -233,6 +246,7 @@ func parseProblem(resp *rawResponse) problem {
 	p := problem{Problem: Problem{
 		Status:     resp.status,
 		APIRelease: resp.header.Get("X-Klaracase-Api-Release"),
+		Header:     safeHeader(resp.header),
 	}}
 	var members map[string]json.RawMessage
 	if json.Unmarshal(resp.body, &members) == nil && members != nil {
@@ -244,6 +258,7 @@ func parseProblem(resp *rawResponse) problem {
 			_ = json.Unmarshal(members["type"], &p.Type)
 			_ = json.Unmarshal(members["title"], &p.Title)
 			_ = json.Unmarshal(members["detail"], &p.Detail)
+			p.readTypedMembers(members)
 			for k, v := range members {
 				switch k {
 				case "type", "title", "status", "detail", "code":
@@ -257,7 +272,7 @@ func parseProblem(resp *rawResponse) problem {
 			return p
 		}
 	}
-	p.Code = "unknown"
+	p.Code = CodeUnknown
 	p.Detail = truncateRunes(string(resp.body), maxErrorDetail)
 	return p
 }
@@ -286,22 +301,36 @@ func (p problem) number(name string) (float64, bool) {
 	return f, true
 }
 
-// statedWait is the wait the server asks for: retry_after_seconds in the body first, then
-// the Retry-After header in whole seconds. An HTTP date in the header is ignored.
-func (p problem) statedWait(h http.Header) (time.Duration, bool) {
-	if f, ok := p.number("retry_after_seconds"); ok && f >= 0 {
-		return time.Duration(f * float64(time.Second)), true
-	}
-	if s := strings.TrimSpace(h.Get("Retry-After")); s != "" {
-		if n, err := strconv.Atoi(s); err == nil && n >= 0 {
-			return time.Duration(n) * time.Second, true
+// readTypedMembers reads the members that only some problems carry. A member that is absent or
+// has an unexpected type stays at its zero value; it is still in Extra.
+func (p *problem) readTypedMembers(members map[string]json.RawMessage) {
+	_ = json.Unmarshal(members["candidates"], &p.Candidates)
+	_ = json.Unmarshal(members["successor"], &p.Successor)
+	_ = json.Unmarshal(members["unit"], &p.Unit)
+	_ = json.Unmarshal(members["cap"], &p.Cap)
+	var resetsAt string
+	if json.Unmarshal(members["resets_at"], &resetsAt) == nil {
+		if t, err := time.Parse(time.RFC3339, resetsAt); err == nil {
+			p.ResetsAt = t
 		}
 	}
-	return 0, false
+}
+
+// safeHeader copies the response headers for an error. It drops the headers that carry
+// credentials, which a response should never hold, as a guard.
+func safeHeader(h http.Header) http.Header {
+	if h == nil {
+		return nil
+	}
+	out := h.Clone()
+	for _, name := range []string{"Authorization", "Proxy-Authorization", "Set-Cookie"} {
+		out.Del(name)
+	}
+	return out
 }
 
 // toError picks the error type by HTTP status.
-func (p problem) toError(resp *rawResponse) error {
+func (p problem) toError(resp *rawResponse, now time.Time) error {
 	base := p.Problem
 	switch resp.status {
 	case http.StatusUnauthorized:
@@ -324,7 +353,7 @@ func (p problem) toError(resp *rawResponse) error {
 		return e
 	case http.StatusTooManyRequests:
 		e := &RateLimitError{Problem: base}
-		if wait, ok := p.statedWait(resp.header); ok {
+		if wait, ok := statedWaitOf(p.Extra, resp.header, now); ok {
 			e.RetryAfterSeconds = int(math.Ceil(wait.Seconds()))
 		}
 		return e

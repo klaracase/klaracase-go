@@ -19,7 +19,7 @@ type requestConfig struct {
 
 func (c *requestConfig) fail(msg string) {
 	if c.err == nil {
-		c.err = &ConfigurationError{Message: msg}
+		c.err = newConfigurationError(msg)
 	}
 }
 

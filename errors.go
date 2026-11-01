@@ -1,10 +1,17 @@
 package klaracase
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
+	"net/http"
+	"sort"
+	"strconv"
 	"strings"
+	"time"
 )
 
 // Error carries one answer of the API that is an error: an RFC 9457 problem document, or a
@@ -33,8 +40,41 @@ type Error struct {
 	Code string
 	// APIRelease is the value of the X-Klaracase-Api-Release header, or "" when it was absent.
 	APIRelease string
+	// Header holds the response headers of the failed call, for example Retry-After and the
+	// X-RateLimit-* headers. It never holds Authorization. It is nil when no answer arrived.
+	Header http.Header
+	// Method is the HTTP method of the failed call. It is "" for an error found before any request.
+	Method string
+	// URL is the address of the failed call without its query string, which can hold search
+	// text. It is "" for an error found before any request.
+	URL string
+
+	// Candidates lists the decisions that carry an ambiguous Aktenzeichen
+	// (code "ambiguous_aktenzeichen"). Pass one of the ids to the next call.
+	Candidates []Candidate
+	// Successor names the statute that replaced a repealed one (code "statute_superseded").
+	Successor string
+	// Unit says what a volume cap counts, "rows" or "documents" (code "volume_cap").
+	Unit string
+	// Cap is the daily limit that was reached (code "volume_cap").
+	Cap int
+	// ResetsAt is the time the daily volume cap resets, midnight Europe/Berlin (code "volume_cap").
+	ResetsAt time.Time
+
 	// Extra holds every problem member that is not type, title, status, detail or code.
 	Extra map[string]json.RawMessage
+}
+
+// Candidate is one decision that carries an ambiguous Aktenzeichen.
+type Candidate struct {
+	// ID is the UUID of the decision. Pass it as the id of the next call.
+	ID string `json:"id"`
+	// Court is the court short form.
+	Court string `json:"court"`
+	// Date is the decision date.
+	Date Date `json:"date"`
+	// Aktenzeichen is the file number.
+	Aktenzeichen string `json:"aktenzeichen"`
 }
 
 // Problem is another name for Error. The concrete error types embed it under this name,
@@ -57,6 +97,108 @@ func (e *Error) Error() string {
 		b.WriteString(e.Detail)
 	}
 	return b.String()
+}
+
+// RetryAfter returns how long the API asks you to wait before the next call: the
+// retry_after_seconds member of the body, or else the Retry-After header, in seconds or as an
+// HTTP date. It returns 0 when the API stated no wait. A volume cap states a wait of hours.
+func (e *Error) RetryAfter() time.Duration {
+	if wait, ok := statedWaitOf(e.Extra, e.Header, time.Now()); ok {
+		return wait
+	}
+	return 0
+}
+
+// Retryable reports whether the API guarantees that the failed call ran nothing and charged
+// nothing, so the same call may be sent again after RetryAfter: a 429 or a 503 answer. It
+// is false for every other error. The client has already retried before it returns such an
+// error, so a true here means the retries ran out or the wait was too long.
+func (e *Error) Retryable() bool {
+	return e.Status == http.StatusTooManyRequests || e.Status == http.StatusServiceUnavailable
+}
+
+// MarshalJSON implements json.Marshaler. It writes a compact object with snake_case keys that
+// is fit to give a language model as a tool result: code, status, title, detail,
+// retry_after_seconds when the API stated a wait, and then every other member of the problem
+// document (cost, balance, candidates, successor, errors and so on). The header, method and
+// URL are left out.
+func (e *Error) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	buf.WriteByte('{')
+	first := true
+	put := func(key string, value any) error {
+		encoded, err := json.Marshal(value)
+		if err != nil {
+			return err
+		}
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		name, _ := json.Marshal(key)
+		buf.Write(name)
+		buf.WriteByte(':')
+		buf.Write(encoded)
+		return nil
+	}
+	if err := put("code", e.Code); err != nil {
+		return nil, err
+	}
+	if e.Status != 0 {
+		if err := put("status", e.Status); err != nil {
+			return nil, err
+		}
+	}
+	if e.Title != "" {
+		if err := put("title", e.Title); err != nil {
+			return nil, err
+		}
+	}
+	if err := put("detail", e.Detail); err != nil {
+		return nil, err
+	}
+	if wait := e.RetryAfter(); wait > 0 {
+		if err := put("retry_after_seconds", int(math.Ceil(wait.Seconds()))); err != nil {
+			return nil, err
+		}
+	}
+	keys := make([]string, 0, len(e.Extra))
+	for key := range e.Extra {
+		if key != "retry_after_seconds" {
+			keys = append(keys, key)
+		}
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		if err := put(key, e.Extra[key]); err != nil {
+			return nil, err
+		}
+	}
+	buf.WriteByte('}')
+	return buf.Bytes(), nil
+}
+
+// statedWaitOf reads the wait that a problem states: retry_after_seconds in the body members,
+// then the Retry-After header as whole seconds or as an HTTP date. now is the reference for
+// a date.
+func statedWaitOf(extra map[string]json.RawMessage, header http.Header, now time.Time) (time.Duration, bool) {
+	if raw, ok := extra["retry_after_seconds"]; ok {
+		var seconds float64
+		if json.Unmarshal(raw, &seconds) == nil && seconds >= 0 {
+			return time.Duration(seconds * float64(time.Second)), true
+		}
+	}
+	value := strings.TrimSpace(header.Get("Retry-After"))
+	if value == "" {
+		return 0, false
+	}
+	if n, err := strconv.Atoi(value); err == nil && n >= 0 {
+		return time.Duration(n) * time.Second, true
+	}
+	if when, err := http.ParseTime(value); err == nil {
+		return max(when.Sub(now), 0), true
+	}
+	return 0, false
 }
 
 // AuthenticationError is an HTTP 401 answer: the token is missing, wrong, expired or revoked.
@@ -157,15 +299,36 @@ type DecodeError struct {
 	Raw json.RawMessage
 }
 
-// ConfigurationError means the client cannot be built: no token, a bad base URL or an
-// invalid option. It is not an API problem and has no code or status.
+// ConfigurationError means the client cannot be built, or a call has an invalid request
+// option: no token, a bad base URL or an invalid option. It is not an API problem. AsError
+// finds an *Error inside it with the code "configuration_error", status 0 and the message as
+// detail.
 type ConfigurationError struct {
+	Problem
 	// Message says what is wrong and how to fix it.
 	Message string
 }
 
+// newConfigurationError builds a ConfigurationError with the common problem fields set.
+func newConfigurationError(message string) *ConfigurationError {
+	return &ConfigurationError{
+		Problem: Problem{Code: CodeConfiguration, Detail: message},
+		Message: message,
+	}
+}
+
 // Error implements the error interface.
 func (e *ConfigurationError) Error() string { return "klaracase: configuration error: " + e.Message }
+
+// Unwrap returns the embedded Error so that errors.As finds *Error.
+func (e *ConfigurationError) Unwrap() error { return &e.Problem }
+
+// Retryable reports whether the same call may be sent again. A transport error means no answer
+// arrived, so the call may or may not have run: a repeated GET is safe, and a repeated paid
+// call costs nothing more in the same month. It is false when the cause is a canceled context.
+func (e *TransportError) Retryable() bool {
+	return !errors.Is(e.Err, context.Canceled)
+}
 
 // Error implements the error interface.
 func (e *TransportError) Error() string {
@@ -254,11 +417,42 @@ func (e *DocumentFailedError) Unwrap() error { return &e.Problem }
 func (e *DocumentTimeoutError) Unwrap() error { return &e.Problem }
 
 // AsError returns the Error inside err, if there is one. It works for every error type of
-// this package except ConfigurationError, and returns false for any other error.
+// this package, including ConfigurationError, and returns false for any other error.
 func AsError(err error) (*Error, bool) {
 	var e *Error
 	if errors.As(err, &e) {
 		return e, true
 	}
 	return nil, false
+}
+
+// IsNotFound reports whether err is an HTTP 404 answer.
+func IsNotFound(err error) bool {
+	var target *NotFoundError
+	return errors.As(err, &target)
+}
+
+// IsRateLimited reports whether err is an HTTP 429 answer: the rate limit or the daily volume cap.
+func IsRateLimited(err error) bool {
+	var target *RateLimitError
+	return errors.As(err, &target)
+}
+
+// IsInsufficientCredits reports whether err is an HTTP 402 answer.
+func IsInsufficientCredits(err error) bool {
+	var target *InsufficientCreditsError
+	return errors.As(err, &target)
+}
+
+// IsValidation reports whether err is an HTTP 422 answer, or a call that the client refused
+// before any request (code "client_validation").
+func IsValidation(err error) bool {
+	var target *ValidationError
+	return errors.As(err, &target)
+}
+
+// IsPermission reports whether err is an HTTP 403 answer.
+func IsPermission(err error) bool {
+	var target *PermissionError
+	return errors.As(err, &target)
 }
