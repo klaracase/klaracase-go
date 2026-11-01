@@ -30,14 +30,40 @@
 // # Optional values
 //
 // A string, a number and a slice that are unset are not sent. A zero number means "not set".
-// A boolean is a *bool so that false can be sent: use [Bool] or [Ptr].
+// A boolean is a *bool so that false can be sent: use [Bool] or [Ptr]. Dates are [Date]
+// values (YYYY-MM-DD). The client checks only what needs no server, such as a missing required
+// value or a date range that runs backwards, and returns a [ValidationError] with the code
+// "client_validation" before it sends anything.
 //
 // # Responses
 //
 // Each method returns a struct with the documented keys of the answer. A key that the SDK
 // does not know is kept in the Extra map of the struct that holds it. Raw holds the whole
-// body unchanged. Meta holds the HTTP status, the API release and the duration. Credits
-// holds the credit accounting of the call.
+// body unchanged: marshal Raw when you need lossless JSON, because marshaling the typed struct
+// writes the modeled keys only. Meta holds the HTTP status, the API release and the duration.
+// Credits holds the credit accounting of the call; use CreditsRemaining and Cost to read it.
+// A success body that does not fit the types returns a [DecodeError] that keeps the body.
+//
+// # Per-call options
+//
+// Every method takes [RequestOption] values after its arguments: [WithHeader],
+// [WithRequestTimeout] and [WithRequestMaxRetries] change one call and leave the client alone.
+//
+// # Pagination
+//
+// [DecisionsService.SearchAll] and [DecisionsService.CitationsAll] return iterators over all
+// rows of a search or of a citation graph. They need a maxPages limit, because each page is a
+// separate request.
+//
+// # Logging
+//
+// The client is silent unless you pass [WithLogger]. It then writes one debug line per retry
+// and never writes the token, the query string or a body.
+//
+// # Agent tools
+//
+// The subpackage github.com/klaracase/klaracase-go/agenttools describes five operations as
+// tools for a language model and runs a tool call against a [Client].
 //
 // # Errors
 //
@@ -57,7 +83,7 @@
 // seconds is not slept: the call returns a [RateLimitError] and you decide. Every method takes
 // a context.Context; use it for the total time limit. [WithTimeout] limits one attempt.
 //
-// For agent frameworks, connect an MCP client to https://klaracase.de/mcp instead. This
-// package is a REST client and does not implement MCP. The API reference is at
+// To use an MCP client instead, connect it to https://klaracase.de/mcp. This package is a REST
+// client and does not implement MCP. The API reference is at
 // https://klaracase.de/docs/api.
 package klaracase

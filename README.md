@@ -193,27 +193,30 @@ bytes.
 
 ## Handle errors
 
-Every failed call returns an error from this package. Use `errors.As` to pick the type you want:
+Every failed call returns an error from this package. Pick the type with `errors.As`, or use a
+helper for the common cases:
 
 ```go
 res, err := client.Decisions.Search(ctx, klaracase.SearchDecisionsParams{Query: "Untreue"})
 
 var credits *klaracase.InsufficientCreditsError
-var limited *klaracase.RateLimitError
-var denied *klaracase.PermissionError
 switch {
 case err == nil:
 	_ = res
 case errors.As(err, &credits):
 	fmt.Printf("this call costs %d credits, the balance is %d\n", credits.Cost, credits.Balance)
-case errors.As(err, &limited):
-	fmt.Printf("try again in %d seconds\n", limited.RetryAfterSeconds)
-case errors.As(err, &denied):
-	fmt.Println("the token lacks the ability:", denied.RequiredAbility)
+case klaracase.IsRateLimited(err):
+	e, _ := klaracase.AsError(err)
+	fmt.Println("try again in", e.RetryAfter())
+case klaracase.IsNotFound(err):
+	fmt.Println("nothing found")
 default:
 	log.Fatal(err)
 }
 ```
+
+The helpers are `IsNotFound`, `IsRateLimited`, `IsInsufficientCredits`, `IsValidation` and
+`IsPermission`.
 
 | Type | When | Extra fields |
 |---|---|---|
@@ -222,29 +225,51 @@ default:
 | `*PermissionError` | 403 | `RequiredAbility` |
 | `*NotFoundError` | 404 | |
 | `*ConflictError` | 409 | |
-| `*ValidationError` | 422, or a client side check | `Errors` (field to messages) |
+| `*ValidationError` | 422, or a client side check (code `client_validation`) | `Errors` (field to messages) |
 | `*RateLimitError` | 429 | `RetryAfterSeconds` |
 | `*ServiceUnavailableError` | 503 | |
 | `*APIError` | any other status, or a body that is not a problem document | |
 | `*TransportError` | no HTTP answer; wraps the cause (`errors.Is(err, context.Canceled)` works) | `Err` |
 | `*TimeoutError` | a timeout; also matches `*TransportError` | |
+| `*DecodeError` | a success status, but the body does not fit the types | `Err`, `Body`, `Raw` |
 | `*DocumentFailedError` | `WaitUntilReady` saw the status `failed` | `ErrorCode`, `Document` |
 | `*DocumentTimeoutError` | `WaitUntilReady` hit the deadline of the context; wraps `context.DeadlineExceeded` | `Document` |
-| `*ConfigurationError` | no token, a bad base URL, a bad option | `Message` |
+| `*ConfigurationError` | no token, a bad base URL, a bad request option | `Message` |
 
-All of them except `*ConfigurationError` carry the common problem fields. Read them with
-`klaracase.AsError`:
+Every type, `*ConfigurationError` included, holds the common problem fields in an `*Error`.
+Read them with `klaracase.AsError`:
 
 ```go
 if e, ok := klaracase.AsError(err); ok {
 	fmt.Println(e.Status, e.Code, e.Detail, e.APIRelease)
+	fmt.Println(e.Method, e.URL)         // the call that failed; the URL has no query string
+	fmt.Println(e.RetryAfter())          // the wait the server asks for, or 0
+	fmt.Println(e.Retryable())           // true for 429 and 503
 	fmt.Println(string(e.Extra["unit"])) // every other member of the problem document
 }
 ```
 
-`Code` comes from the closed list of the API, for example `not_found` or `insufficient_credits`.
-If the server sends something that is not a problem document (an HTML 502 page, for example), the
-code is `unknown` and `Detail` holds the first 1,000 characters of the body.
+`Code` comes from the closed list of the API. The SDK has a constant for each, such as
+`klaracase.CodeNotFound`. A code the SDK does not know is kept as it is. If the server sends
+something that is not a problem document (an HTML 502 page, for example), the code is `unknown`
+and `Detail` holds the first 1,000 characters of the body. `Candidates`, `Successor`, `Unit`,
+`Cap` and `ResetsAt` hold the extra members of the codes that carry them, for example the list of
+decisions behind an ambiguous Aktenzeichen.
+
+`RetryAfter` reads `retry_after_seconds` from the body first. It then reads the `Retry-After`
+header, as seconds or as an HTTP date.
+
+An `*Error` is also JSON. `json.Marshal(err)` writes the code, status, title, detail, the wait and
+the extra members. It never holds the token, the query string or the request body, so it is safe
+to log or to give to a language model.
+
+### The decode error
+
+A success status with a body that does not fit the types returns a `*klaracase.DecodeError` and
+no response. The call may already be charged, so the error keeps the whole body in `Raw`. This is
+a choice: a typed client that hid a wrong body would give you wrong values, and a zero value that
+looks like data is worse than an error you can handle. If you need to carry on anyway, parse
+`Raw` yourself.
 
 ## Retries
 
@@ -260,7 +285,7 @@ code is `unknown` and `Detail` holds the first 1,000 characters of the body.
   was sent is not retried: the request may have run. Repeating a paid call by hand is free in the
   same month, because one charge covers the same operation on the same subject.
 
-Change the limit with `klaracase.WithMaxRetries(n)`. Zero turns retries off.
+Change the limit with `klaracase.WithMaxRetries(n)`, or for one call with `WithRequestMaxRetries(n)`. Zero turns retries off.
 
 ## Time limits
 
@@ -313,7 +338,55 @@ The API only adds keys within v1, so a new release does not break your code.
 Some keys carry the note `fortgeltung_note`. It says that the API does not check whether a decision
 is still good law. Show it to your users.
 
-## Other options
+## Per-call options
+
+Every method takes `...RequestOption` after its arguments. An option changes one call and leaves
+the client as it was.
+
+```go
+res, err := client.Corpus.Coverage(ctx, klaracase.CoverageParams{Top: 5},
+	klaracase.WithHeader("X-Trace-Id", "job-42"),       // not Authorization or Content-Type
+	klaracase.WithRequestTimeout(5*time.Second),        // one attempt of this call
+	klaracase.WithRequestMaxRetries(0),                 // no retries for this call
+)
+```
+
+An invalid option returns a `*klaracase.ConfigurationError` before any request.
+
+## Pagination
+
+`Decisions.SearchAll` and `Decisions.CitationsAll` return iterators (`iter.Seq2`) that fetch page
+after page:
+
+```go
+const maxPages = 3 // required: there is no way to ask for "all"
+for hit, err := range client.Decisions.SearchAll(ctx, klaracase.SearchDecisionsParams{Query: "Untreue"}, maxPages) {
+	if err != nil {
+		return err
+	}
+	fmt.Println(hit.Aktenzeichen)
+}
+```
+
+The iteration stops after `maxPages` pages, on an empty page, when the candidate pool is used up,
+at the last page the API serves (10 for a search, 20 for a citation graph), after the first error,
+or when you break out of the loop. `CitationsAll` yields the `references`, then the `referenced_by`
+rows of each page, and only works at depth 1.
+
+Credits: each page is a separate request and counts against the rate limit of 60 per minute. By
+the contract, one charge covers one operation on one subject per organization and calendar month,
+so later pages of the same query should cost nothing more. Look at `res.Credits` on a response if
+you need to be sure. Keep `maxPages` low.
+
+## Uploads and polling
+
+See "Check a file" above. `WaitUntilReady` polls every 2 seconds by default. Change that with
+`WithPollInterval`. The context is the only deadline. When it passes, you get a
+`*DocumentTimeoutError` that holds the last receipt, and `errors.Is(err, context.DeadlineExceeded)`
+is true. A document with the status `failed` returns a `*DocumentFailedError`. Pass
+`WithPollRequestOptions(...)` to give every poll call its own request options.
+
+## Client options
 
 ```go
 client, err := klaracase.New(token,
@@ -322,6 +395,7 @@ client, err := klaracase.New(token,
 	klaracase.WithTimeout(20*time.Second),
 	klaracase.WithMaxRetries(3),
 	klaracase.WithUserAgentSuffix("my-app/1.2"),
+	klaracase.WithLogger(slog.Default()),
 	klaracase.WithDeprecationHandler(func(n klaracase.DeprecationNotice) {
 		log.Printf("%s is deprecated, sunset %s", n.Endpoint, n.Sunset)
 	}),
@@ -331,10 +405,17 @@ client, err := klaracase.New(token,
 The user agent is `klaracase-go/0.1.0 go/<version>`, followed by your suffix.
 
 When an endpoint is deprecated, the API announces it with `Deprecation` and `Sunset` headers. The
-client calls your handler once per endpoint and process. Without a handler it writes one warning
+client calls your handler once per endpoint and client. Without a handler it writes one warning
 with `log/slog`.
 
 A `Client` is safe for use by many goroutines.
+
+## Logging
+
+The client is silent by default. Pass `WithLogger` to get debug lines. A retry writes one line
+with the method, the path, the status, the attempt, the wait and the cause. The client never logs
+the token, the query string, a request body or a response body. The deprecation warning goes to
+this logger too (or to `slog.Default()` when you set none).
 
 ## Credits
 
@@ -347,28 +428,80 @@ again in that month costs 0. The API sends no `Idempotency-Key` header.
 The rate limit is 60 requests per minute per token. The calls `Datapackages.Create`,
 `CitationChecks.Create` and `CitationCheckDocuments.Upload` have an extra limit of 10 per minute.
 
-## Agents and MCP
+## Agent tools
 
-This package is a REST client. It does not implement MCP. If you build an agent, connect your MCP
-client to `https://klaracase.de/mcp`. The same token works there.
+The subpackage `agenttools` describes five operations as tools for a language model and runs a
+tool call for you. It has no dependency on an agent framework.
 
-## Test and develop
+```go
+import "github.com/klaracase/klaracase-go/agenttools"
+
+tools := agenttools.Tools() // Name, Description and a JSON Schema for each tool
+// ... give them to your model API; the model answers with a tool call ...
+result, err := agenttools.Call(ctx, client, call.Name, call.Input)
+// give result back to the model as the tool result
+```
+
+The tools are `search_decisions`, `cross_type_search`, `get_decision`, `get_norm` and
+`check_citations`. The result is short JSON: `get_decision` returns at most 4,000 characters of
+text unless the input sets `max_chars`, and `check_citations` returns the verdicts with their
+offsets, not the whole run. An API error is not a Go error. It becomes the text
+`{"error":{"code":...,"status":...,"detail":...}}`, so the model can read it and act. `Call`
+returns a Go error only for an unknown tool name and for a canceled context.
+
+To connect an MCP client instead, use `https://klaracase.de/mcp`. The same token works there.
+This package does not implement MCP.
+
+## Testing your code
+
+Give the client a `*http.Client` with your own `RoundTripper`, or point it at an `httptest` server.
+Neither needs a network or a token:
+
+```go
+type stub func(*http.Request) (*http.Response, error)
+
+func (f stub) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+client, _ := klaracase.New("klc_your_token_here", klaracase.WithHTTPClient(&http.Client{
+	Transport: stub(func(r *http.Request) (*http.Response, error) {
+		body := `{"results":[],"page":1,"limit":10}`
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": {"application/json"}},
+			Body:       io.NopCloser(strings.NewReader(body)),
+			Request:    r,
+		}, nil
+	}),
+}))
+```
+
+For an `httptest` server, pass `klaracase.WithBaseURL(srv.URL + "/api/v1")`. The examples in
+`example_test.go` do this and run with `go test`.
+
+## Develop
 
 ```sh
-make test   # go test -race ./..., no network
-make vet
-make fmt
+make test   # go test -race -shuffle=on -cover, no network
+make check  # gofmt, vet, go mod tidy, staticcheck, golangci-lint and the tests
 make smoke  # calls the two free endpoints; needs KLARACASE_API_TOKEN; not part of CI
 ```
 
 The tests replay the shared conformance cases in `testdata/conformance/` against a local
-`httptest` server. See `CONTRIBUTING.md`.
+`httptest` server. Tests of the drift guards read the example answers in `testdata/examples/`.
+See `CONTRIBUTING.md`.
 
-## Stability and privacy
+## Requirements
 
-This SDK is 0.x and tracks API release 0.95.0. Minor versions may change the public surface until
-1.0. Every change is listed in [CHANGELOG.md](CHANGELOG.md). All Klaracase SDKs bump together when
-the API contract changes.
+Go 1.24 or newer. CI runs on 1.24, the previous release and the current release. The module has
+no dependencies.
+
+## Versioning
+
+This SDK is 0.x and tracks API release 0.95.0. Until 1.0, a minor version (0.1 to 0.2) may change
+the public surface, and a patch version (0.1.0 to 0.1.1) never does. Every change is listed in
+[CHANGELOG.md](CHANGELOG.md). All Klaracase SDKs bump together when the API contract changes.
+
+## Privacy
 
 The SDK sends no telemetry. The only thing it adds to a request is the User-Agent header
 `klaracase-go/<version> go/<version>`, for example `klaracase-go/0.1.0 go/1.24.2`.
