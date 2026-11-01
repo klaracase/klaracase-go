@@ -53,6 +53,7 @@ type request struct {
 	query       query
 	body        []byte
 	contentType string
+	opts        []RequestOption
 }
 
 // rawResponse is one HTTP answer, fully read.
@@ -66,10 +67,18 @@ type rawResponse struct {
 // do sends the request and decodes a 2xx answer into out. It retries as the design says:
 // 429 and 503 on every method, transport errors on GET only.
 func (c *Client) do(ctx context.Context, r request, out any) error {
+	cfg, err := newRequestConfig(r.opts)
+	if err != nil {
+		return err
+	}
+	maxRetries := c.maxRetries
+	if cfg.maxRetries != nil {
+		maxRetries = *cfg.maxRetries
+	}
 	for attempt := 0; ; attempt++ {
-		resp, err := c.attempt(ctx, r)
+		resp, err := c.attempt(ctx, r, cfg)
 		if err != nil {
-			if r.method != http.MethodGet || attempt >= c.maxRetries || ctx.Err() != nil {
+			if r.method != http.MethodGet || attempt >= maxRetries || ctx.Err() != nil {
 				return err
 			}
 			if serr := c.sleep(ctx, backoff(attempt)); serr != nil {
@@ -83,7 +92,7 @@ func (c *Client) do(ctx context.Context, r request, out any) error {
 		}
 		parsed := parseProblem(resp)
 		apiErr := parsed.toError(resp)
-		if (resp.status != http.StatusTooManyRequests && resp.status != http.StatusServiceUnavailable) || attempt >= c.maxRetries {
+		if (resp.status != http.StatusTooManyRequests && resp.status != http.StatusServiceUnavailable) || attempt >= maxRetries {
 			return apiErr
 		}
 		wait, stated := parsed.statedWait(resp.header)
@@ -100,11 +109,15 @@ func (c *Client) do(ctx context.Context, r request, out any) error {
 }
 
 // attempt sends the request once, with the per attempt timeout, and reads the whole answer.
-func (c *Client) attempt(ctx context.Context, r request) (*rawResponse, error) {
+func (c *Client) attempt(ctx context.Context, r request, cfg requestConfig) (*rawResponse, error) {
 	reqCtx := ctx
-	if c.timeout > 0 {
+	timeout := c.timeout
+	if cfg.timeout != nil {
+		timeout = *cfg.timeout
+	}
+	if timeout > 0 {
 		var cancel context.CancelFunc
-		reqCtx, cancel = context.WithTimeout(ctx, c.timeout)
+		reqCtx, cancel = context.WithTimeout(ctx, timeout)
 		defer cancel()
 	}
 	target := c.baseURL + r.path
@@ -124,6 +137,9 @@ func (c *Client) attempt(ctx context.Context, r request) (*rawResponse, error) {
 	req.Header.Set("User-Agent", c.userAgent)
 	if r.contentType != "" {
 		req.Header.Set("Content-Type", r.contentType)
+	}
+	for key, values := range cfg.header {
+		req.Header[key] = append([]string(nil), values...)
 	}
 	start := time.Now()
 	res, err := c.httpClient.Do(req)
@@ -315,10 +331,10 @@ func (p problem) toError(resp *rawResponse) error {
 }
 
 // jsonRequest builds a POST request with a JSON body.
-func jsonRequest(endpoint, path string, body any) (request, error) {
+func jsonRequest(endpoint, path string, body any, opts []RequestOption) (request, error) {
 	data, err := json.Marshal(body)
 	if err != nil {
 		return request{}, fmt.Errorf("klaracase: encode request body: %w", err)
 	}
-	return request{method: http.MethodPost, endpoint: endpoint, path: path, body: data, contentType: "application/json"}, nil
+	return request{method: http.MethodPost, endpoint: endpoint, path: path, body: data, contentType: "application/json", opts: opts}, nil
 }

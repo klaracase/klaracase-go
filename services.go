@@ -30,7 +30,7 @@ type CitationCheckDocumentsService struct{ c *Client }
 type CorpusService struct{ c *Client }
 
 // Search finds court decisions (GET /decisions/search). It costs 1 credit.
-func (s *DecisionsService) Search(ctx context.Context, p SearchDecisionsParams) (*DecisionSearchResponse, error) {
+func (s *DecisionsService) Search(ctx context.Context, p SearchDecisionsParams, opts ...RequestOption) (*DecisionSearchResponse, error) {
 	if err := validateSearchDecisions(p); err != nil {
 		return nil, err
 	}
@@ -48,7 +48,7 @@ func (s *DecisionsService) Search(ctx context.Context, p SearchDecisionsParams) 
 	q.num("page", p.Page)
 	q.boolp("bridge", p.Bridge)
 	out := new(DecisionSearchResponse)
-	if err := s.c.do(ctx, request{method: http.MethodGet, endpoint: "GET /decisions/search", path: "/decisions/search", query: q}, out); err != nil {
+	if err := s.c.do(ctx, request{method: http.MethodGet, endpoint: "GET /decisions/search", path: "/decisions/search", query: q, opts: opts}, out); err != nil {
 		return nil, err
 	}
 	return out, nil
@@ -56,7 +56,7 @@ func (s *DecisionsService) Search(ctx context.Context, p SearchDecisionsParams) 
 
 // Get reads one decision (GET /decisions/{id}). The id is a UUID, an Aktenzeichen or an ECLI.
 // It costs 1 credit.
-func (s *DecisionsService) Get(ctx context.Context, id string, p GetDecisionParams) (*DecisionResponse, error) {
+func (s *DecisionsService) Get(ctx context.Context, id string, p GetDecisionParams, opts ...RequestOption) (*DecisionResponse, error) {
 	if err := validateGetDecision(id, p); err != nil {
 		return nil, err
 	}
@@ -68,7 +68,7 @@ func (s *DecisionsService) Get(ctx context.Context, id string, p GetDecisionPara
 	q.str("court", p.Court)
 	q.str("date", string(p.Date))
 	out := new(DecisionResponse)
-	if err := s.c.do(ctx, request{method: http.MethodGet, endpoint: "GET /decisions/{id}", path: "/decisions/" + escapeSegment(id), query: q}, out); err != nil {
+	if err := s.c.do(ctx, request{method: http.MethodGet, endpoint: "GET /decisions/{id}", path: "/decisions/" + escapeSegment(id), query: q, opts: opts}, out); err != nil {
 		return nil, err
 	}
 	return out, nil
@@ -76,7 +76,7 @@ func (s *DecisionsService) Get(ctx context.Context, id string, p GetDecisionPara
 
 // Citations reads the citation graph around one decision (GET /decisions/{id}/citations).
 // It costs 2 credits.
-func (s *DecisionsService) Citations(ctx context.Context, id string, p CitationsParams) (*CitationsResponse, error) {
+func (s *DecisionsService) Citations(ctx context.Context, id string, p CitationsParams, opts ...RequestOption) (*CitationsResponse, error) {
 	if err := validateCitations(id, p); err != nil {
 		return nil, err
 	}
@@ -87,7 +87,7 @@ func (s *DecisionsService) Citations(ctx context.Context, id string, p Citations
 	q.str("date", string(p.Date))
 	q.num("page", p.Page)
 	out := new(CitationsResponse)
-	if err := s.c.do(ctx, request{method: http.MethodGet, endpoint: "GET /decisions/{id}/citations", path: "/decisions/" + escapeSegment(id) + "/citations", query: q}, out); err != nil {
+	if err := s.c.do(ctx, request{method: http.MethodGet, endpoint: "GET /decisions/{id}/citations", path: "/decisions/" + escapeSegment(id) + "/citations", query: q, opts: opts}, out); err != nil {
 		return nil, err
 	}
 	return out, nil
@@ -95,25 +95,25 @@ func (s *DecisionsService) Citations(ctx context.Context, id string, p Citations
 
 // Get reads the current text of one statute norm (GET /norms/{reference}), for example
 // "§ 535 BGB" or "Art. 6 DSGVO". It costs 1 credit.
-func (s *NormsService) Get(ctx context.Context, reference string, p GetNormParams) (*NormResponse, error) {
+func (s *NormsService) Get(ctx context.Context, reference string, p GetNormParams, opts ...RequestOption) (*NormResponse, error) {
 	if reference == "" {
 		return nil, clientValidation("reference", "reference is required")
 	}
 	var q query
 	q.str("jurisdiction", string(p.Jurisdiction))
 	out := new(NormResponse)
-	if err := s.c.do(ctx, request{method: http.MethodGet, endpoint: "GET /norms/{reference}", path: "/norms/" + escapeSegment(reference), query: q}, out); err != nil {
+	if err := s.c.do(ctx, request{method: http.MethodGet, endpoint: "GET /norms/{reference}", path: "/norms/" + escapeSegment(reference), query: q, opts: opts}, out); err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
 // Create bundles 1 to 10 decisions and their citations (POST /datapackages). It costs 5 credits.
-func (s *DatapackagesService) Create(ctx context.Context, p CreateDatapackageParams) (*DatapackageResponse, error) {
+func (s *DatapackagesService) Create(ctx context.Context, p CreateDatapackageParams, opts ...RequestOption) (*DatapackageResponse, error) {
 	if err := validateDatapackage(p); err != nil {
 		return nil, err
 	}
-	req, err := jsonRequest("POST /datapackages", "/datapackages", p)
+	req, err := jsonRequest("POST /datapackages", "/datapackages", p, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -128,11 +128,11 @@ func (s *DatapackagesService) Create(ctx context.Context, p CreateDatapackagePar
 // The answer is the finished run. It costs 2 to 4 credits by length; the same text again in
 // the same month costs nothing. Exactly one of Text and DocumentID must be set, otherwise
 // Create returns a *ValidationError with code "client_validation" and sends nothing.
-func (s *CitationChecksService) Create(ctx context.Context, p CreateCitationCheckParams) (*CitationCheckRun, error) {
+func (s *CitationChecksService) Create(ctx context.Context, p CreateCitationCheckParams, opts ...RequestOption) (*CitationCheckRun, error) {
 	if err := validateCitationCheck(p); err != nil {
 		return nil, err
 	}
-	req, err := jsonRequest("POST /citation-checks", "/citation-checks", p)
+	req, err := jsonRequest("POST /citation-checks", "/citation-checks", p, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -144,12 +144,12 @@ func (s *CitationChecksService) Create(ctx context.Context, p CreateCitationChec
 }
 
 // Get reads a citation check run of your organization (GET /citation-checks/{run}). It is free.
-func (s *CitationChecksService) Get(ctx context.Context, runID string) (*CitationCheckRun, error) {
+func (s *CitationChecksService) Get(ctx context.Context, runID string, opts ...RequestOption) (*CitationCheckRun, error) {
 	if runID == "" {
 		return nil, clientValidation("run_id", "run id is required")
 	}
 	out := new(CitationCheckRun)
-	if err := s.c.do(ctx, request{method: http.MethodGet, endpoint: "GET /citation-checks/{run}", path: "/citation-checks/" + escapeSegment(runID)}, out); err != nil {
+	if err := s.c.do(ctx, request{method: http.MethodGet, endpoint: "GET /citation-checks/{run}", path: "/citation-checks/" + escapeSegment(runID), opts: opts}, out); err != nil {
 		return nil, err
 	}
 	return out, nil
@@ -158,7 +158,7 @@ func (s *CitationChecksService) Get(ctx context.Context, runID string) (*Citatio
 // Upload sends a file for a citation check (POST /citation-check-documents, multipart). The
 // answer has HTTP status 202 and the status "uploaded". Upload is free. Poll with Get or
 // WaitUntilReady until the status is "ready", then pass the id to CitationChecks.Create.
-func (s *CitationCheckDocumentsService) Upload(ctx context.Context, p UploadParams) (*CitationCheckDocument, error) {
+func (s *CitationCheckDocumentsService) Upload(ctx context.Context, p UploadParams, opts ...RequestOption) (*CitationCheckDocument, error) {
 	if p.File == nil {
 		return nil, clientValidation("file", "File is required")
 	}
@@ -188,7 +188,7 @@ func (s *CitationCheckDocumentsService) Upload(ctx context.Context, p UploadPara
 	if err := mw.Close(); err != nil {
 		return nil, clientValidation("file", "build upload: %v", err)
 	}
-	req := request{method: http.MethodPost, endpoint: "POST /citation-check-documents", path: "/citation-check-documents", body: buf.Bytes(), contentType: mw.FormDataContentType()}
+	req := request{method: http.MethodPost, endpoint: "POST /citation-check-documents", path: "/citation-check-documents", body: buf.Bytes(), contentType: mw.FormDataContentType(), opts: opts}
 	out := new(CitationCheckDocument)
 	if err := s.c.do(ctx, req, out); err != nil {
 		return nil, err
@@ -197,12 +197,12 @@ func (s *CitationCheckDocumentsService) Upload(ctx context.Context, p UploadPara
 }
 
 // Get reads the receipt of an uploaded document (GET /citation-check-documents/{document}). It is free.
-func (s *CitationCheckDocumentsService) Get(ctx context.Context, documentID string) (*CitationCheckDocument, error) {
+func (s *CitationCheckDocumentsService) Get(ctx context.Context, documentID string, opts ...RequestOption) (*CitationCheckDocument, error) {
 	if documentID == "" {
 		return nil, clientValidation("document_id", "document id is required")
 	}
 	out := new(CitationCheckDocument)
-	if err := s.c.do(ctx, request{method: http.MethodGet, endpoint: "GET /citation-check-documents/{document}", path: "/citation-check-documents/" + escapeSegment(documentID)}, out); err != nil {
+	if err := s.c.do(ctx, request{method: http.MethodGet, endpoint: "GET /citation-check-documents/{document}", path: "/citation-check-documents/" + escapeSegment(documentID), opts: opts}, out); err != nil {
 		return nil, err
 	}
 	return out, nil
@@ -254,12 +254,12 @@ func (s *CitationCheckDocumentsService) WaitUntilReady(ctx context.Context, docu
 }
 
 // Coverage reports what the corpus holds (GET /corpus/coverage). It is free.
-func (s *CorpusService) Coverage(ctx context.Context, p CoverageParams) (*CoverageResponse, error) {
+func (s *CorpusService) Coverage(ctx context.Context, p CoverageParams, opts ...RequestOption) (*CoverageResponse, error) {
 	var q query
 	q.str("branch", string(p.Branch))
 	q.num("top", p.Top)
 	out := new(CoverageResponse)
-	if err := s.c.do(ctx, request{method: http.MethodGet, endpoint: "GET /corpus/coverage", path: "/corpus/coverage", query: q}, out); err != nil {
+	if err := s.c.do(ctx, request{method: http.MethodGet, endpoint: "GET /corpus/coverage", path: "/corpus/coverage", query: q, opts: opts}, out); err != nil {
 		return nil, err
 	}
 	return out, nil
@@ -267,7 +267,7 @@ func (s *CorpusService) Coverage(ctx context.Context, p CoverageParams) (*Covera
 
 // Facets counts the values of one field (GET /corpus/facets/{field}). It is free. The field
 // cited_norms needs FacetsParams.Norm.
-func (s *CorpusService) Facets(ctx context.Context, field FacetField, p FacetsParams) (*FacetsResponse, error) {
+func (s *CorpusService) Facets(ctx context.Context, field FacetField, p FacetsParams, opts ...RequestOption) (*FacetsResponse, error) {
 	if field == "" {
 		return nil, clientValidation("field", "field is required")
 	}
@@ -276,7 +276,7 @@ func (s *CorpusService) Facets(ctx context.Context, field FacetField, p FacetsPa
 	q.str("norm", p.Norm)
 	q.str("prefix", p.Prefix)
 	out := new(FacetsResponse)
-	if err := s.c.do(ctx, request{method: http.MethodGet, endpoint: "GET /corpus/facets/{field}", path: "/corpus/facets/" + escapeSegment(string(field)), query: q}, out); err != nil {
+	if err := s.c.do(ctx, request{method: http.MethodGet, endpoint: "GET /corpus/facets/{field}", path: "/corpus/facets/" + escapeSegment(string(field)), query: q, opts: opts}, out); err != nil {
 		return nil, err
 	}
 	return out, nil
