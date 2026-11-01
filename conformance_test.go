@@ -300,9 +300,17 @@ func dispatch(t *testing.T, ctx context.Context, c *Client, group *string, metho
 	case "citation_check_documents.get":
 		return ret(c.CitationCheckDocuments.Get(ctx, a.str("document_id")))
 	case "citation_check_documents.wait_until_ready":
-		return ret(c.CitationCheckDocuments.WaitUntilReady(ctx, a.str("document_id"), WaitParams{
-			PollInterval: a.seconds("poll_interval"), Timeout: a.seconds("timeout"),
-		}))
+		// The context is the only deadline, so the timeout of the case becomes one.
+		if timeout := a.seconds("timeout"); timeout > 0 {
+			var cancel context.CancelFunc
+			ctx, cancel = context.WithTimeout(ctx, timeout)
+			defer cancel()
+		}
+		var opts []WaitOption
+		if interval := a.seconds("poll_interval"); interval > 0 {
+			opts = append(opts, WithPollInterval(interval))
+		}
+		return ret(c.CitationCheckDocuments.WaitUntilReady(ctx, a.str("document_id"), opts...))
 	case "corpus.coverage":
 		return ret(c.Corpus.Coverage(ctx, CoverageParams{Branch: Branch(a.str("branch")), Top: a.num("top")}))
 	case "corpus.facets":

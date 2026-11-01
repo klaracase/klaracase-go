@@ -116,7 +116,7 @@ the code `client_validation`.
 | `client.CitationChecks.Get(ctx, runID)` | `GET /citation-checks/{run}` | free |
 | `client.CitationCheckDocuments.Upload(ctx, UploadParams{...})` | `POST /citation-check-documents` | free |
 | `client.CitationCheckDocuments.Get(ctx, id)` | `GET /citation-check-documents/{document}` | free |
-| `client.CitationCheckDocuments.WaitUntilReady(ctx, id, WaitParams{...})` | polls the call above | free |
+| `client.CitationCheckDocuments.WaitUntilReady(ctx, id, WithPollInterval(d))` | polls the call above | free |
 | `client.Corpus.Coverage(ctx, CoverageParams{...})` | `GET /corpus/coverage` | free |
 | `client.Corpus.Facets(ctx, field, FacetsParams{...})` | `GET /corpus/facets/{field}` | free |
 
@@ -174,10 +174,10 @@ doc, err := client.CitationCheckDocuments.Upload(ctx, klaracase.UploadParams{
 if err != nil {
 	log.Fatal(err)
 }
-ready, err := client.CitationCheckDocuments.WaitUntilReady(ctx, doc.ID, klaracase.WaitParams{
-	PollInterval: 2 * time.Second, // the default
-	Timeout:      2 * time.Minute, // the default
-})
+ctx, cancel := context.WithTimeout(ctx, 2*time.Minute) // the context is the only deadline
+defer cancel()
+ready, err := client.CitationCheckDocuments.WaitUntilReady(ctx, doc.ID,
+	klaracase.WithPollInterval(2*time.Second)) // the default
 if err != nil {
 	log.Fatal(err) // *DocumentFailedError or *DocumentTimeoutError, see below
 }
@@ -229,7 +229,7 @@ default:
 | `*TransportError` | no HTTP answer; wraps the cause (`errors.Is(err, context.Canceled)` works) | `Err` |
 | `*TimeoutError` | a timeout; also matches `*TransportError` | |
 | `*DocumentFailedError` | `WaitUntilReady` saw the status `failed` | `ErrorCode`, `Document` |
-| `*DocumentTimeoutError` | `WaitUntilReady` ran out of time | `Document` |
+| `*DocumentTimeoutError` | `WaitUntilReady` hit the deadline of the context; wraps `context.DeadlineExceeded` | `Document` |
 | `*ConfigurationError` | no token, a bad base URL, a bad option | `Message` |
 
 All of them except `*ConfigurationError` carry the common problem fields. Read them with

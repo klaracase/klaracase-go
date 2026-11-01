@@ -274,12 +274,16 @@ type DocumentFailedError struct {
 	Document *CitationCheckDocument
 }
 
-// DocumentTimeoutError is returned by WaitUntilReady when the timeout passes before the
-// document reaches a final status. Code is "wait_timeout".
+// DocumentTimeoutError is returned by WaitUntilReady when the deadline of the context passes
+// before the document reaches a final status. Code is "wait_timeout". It wraps
+// context.DeadlineExceeded, so errors.Is(err, context.DeadlineExceeded) is true.
 type DocumentTimeoutError struct {
 	Problem
-	// Document is the last receipt of the document.
+	// Document is the last receipt that was read, or nil when the deadline passed before the
+	// first answer.
 	Document *CitationCheckDocument
+	// Err is context.DeadlineExceeded.
+	Err error
 }
 
 // DecodeError means the API answered with a success status, but the body does not fit the
@@ -361,7 +365,7 @@ func (e *DocumentFailedError) Error() string {
 
 // Error implements the error interface.
 func (e *DocumentTimeoutError) Error() string {
-	return "klaracase: the document was not ready before the timeout"
+	return "klaracase: the document was not ready before the deadline of the context"
 }
 
 // Unwrap returns the embedded Error so that errors.As finds *Error.
@@ -413,8 +417,13 @@ func (e *DecodeError) Unwrap() []error {
 // Unwrap returns the embedded Error so that errors.As finds *Error.
 func (e *DocumentFailedError) Unwrap() error { return &e.Problem }
 
-// Unwrap returns the embedded Error so that errors.As finds *Error.
-func (e *DocumentTimeoutError) Unwrap() error { return &e.Problem }
+// Unwrap returns the embedded Error and the deadline error.
+func (e *DocumentTimeoutError) Unwrap() []error {
+	if e.Err == nil {
+		return []error{&e.Problem}
+	}
+	return []error{&e.Problem, e.Err}
+}
 
 // AsError returns the Error inside err, if there is one. It works for every error type of
 // this package, including ConfigurationError, and returns false for any other error.

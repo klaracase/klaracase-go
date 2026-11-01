@@ -1,9 +1,6 @@
 package klaracase
 
-import (
-	"io"
-	"time"
-)
+import "io"
 
 // A params struct can be a tool input for a language model. Its json tags are the wire names
 // of the API, and a field that is not set is left out when the struct is marshaled. For every
@@ -162,12 +159,4 @@ type FacetsParams struct {
 	Norm string `json:"norm,omitzero"`
 	// Prefix keeps values that start with this text, case-insensitive.
 	Prefix string `json:"prefix,omitzero"`
-}
-
-// WaitParams are the parameters of CitationCheckDocuments.WaitUntilReady.
-type WaitParams struct {
-	// PollInterval is the wait between two polls. Zero means 2 seconds.
-	PollInterval time.Duration
-	// Timeout is the longest total wait. Zero means 120 seconds.
-	Timeout time.Duration
 }

@@ -112,10 +112,8 @@ func ExampleCitationCheckDocumentsService_WaitUntilReady() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	ready, err := client.CitationCheckDocuments.WaitUntilReady(ctx, doc.ID, klaracase.WaitParams{
-		PollInterval: 2 * time.Second,
-		Timeout:      time.Minute,
-	})
+	// The context is the only deadline of the wait.
+	ready, err := client.CitationCheckDocuments.WaitUntilReady(ctx, doc.ID, klaracase.WithPollInterval(2*time.Second))
 	var failed *klaracase.DocumentFailedError
 	if errors.As(err, &failed) {
 		log.Fatalf("the file cannot be read: %s", failed.ErrorCode)

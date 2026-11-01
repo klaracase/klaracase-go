@@ -3,6 +3,7 @@ package klaracase
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"mime"
 	"mime/multipart"
@@ -208,24 +209,67 @@ func (s *CitationCheckDocumentsService) Get(ctx context.Context, documentID stri
 	return out, nil
 }
 
+// WaitOption changes how WaitUntilReady polls.
+type WaitOption func(*waitConfig)
+
+type waitConfig struct {
+	interval    time.Duration
+	requestOpts []RequestOption
+	err         error
+}
+
+// DefaultPollInterval is the wait between two polls of WaitUntilReady.
+const DefaultPollInterval = 2 * time.Second
+
+// WithPollInterval sets the wait between two polls (default 2 seconds). It must be above zero.
+func WithPollInterval(d time.Duration) WaitOption {
+	return func(c *waitConfig) {
+		if d <= 0 && c.err == nil {
+			c.err = newConfigurationError("WithPollInterval: the interval must be above zero")
+			return
+		}
+		c.interval = d
+	}
+}
+
+// WithPollRequestOptions sets request options for every poll of WaitUntilReady, for example a
+// header or a shorter timeout per poll.
+func WithPollRequestOptions(opts ...RequestOption) WaitOption {
+	return func(c *waitConfig) { c.requestOpts = append(c.requestOpts, opts...) }
+}
+
 // WaitUntilReady polls Get until the document is "ready" and returns the receipt. The statuses
-// "uploaded", "extracting" and "ocr_pending" are not final. It returns a *DocumentFailedError
-// when the status is "failed", a *DocumentTimeoutError when Timeout passes first, and the
-// usual error for a failed poll. The context ends the wait early.
-func (s *CitationCheckDocumentsService) WaitUntilReady(ctx context.Context, documentID string, p WaitParams) (*CitationCheckDocument, error) {
-	poll, timeout := p.PollInterval, p.Timeout
-	if poll <= 0 {
-		poll = 2 * time.Second
+// "uploaded", "extracting" and "ocr_pending" are not final.
+//
+// The context is the only deadline. Pass a context with a timeout; without one the wait lasts
+// until the document is ready or failed. It returns:
+//
+//   - a *DocumentFailedError when the status is "failed",
+//   - a *DocumentTimeoutError when the deadline of the context passes first. It wraps
+//     context.DeadlineExceeded, so errors.Is(err, context.DeadlineExceeded) is true, and it
+//     carries the last receipt that was read,
+//   - the context error, inside a *TransportError, when the context is canceled,
+//   - the usual error for a failed poll.
+func (s *CitationCheckDocumentsService) WaitUntilReady(ctx context.Context, documentID string, opts ...WaitOption) (*CitationCheckDocument, error) {
+	cfg := waitConfig{interval: DefaultPollInterval}
+	for _, opt := range opts {
+		if opt != nil {
+			opt(&cfg)
+		}
 	}
-	if timeout <= 0 {
-		timeout = 120 * time.Second
+	if cfg.err != nil {
+		return nil, cfg.err
 	}
-	deadline := s.c.now().Add(timeout)
+	var last *CitationCheckDocument
 	for {
-		doc, err := s.Get(ctx, documentID)
+		doc, err := s.Get(ctx, documentID, cfg.requestOpts...)
 		if err != nil {
+			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+				return nil, waitTimeout(last)
+			}
 			return nil, err
 		}
+		last = doc
 		switch doc.Status {
 		case DocumentReady:
 			return doc, nil
@@ -240,16 +284,21 @@ func (s *CitationCheckDocumentsService) WaitUntilReady(ctx context.Context, docu
 				Document:  doc,
 			}
 		}
-		remaining := deadline.Sub(s.c.now())
-		if remaining <= 0 {
-			return nil, &DocumentTimeoutError{
-				Problem:  Problem{Code: "wait_timeout", Detail: "the document was not ready before the timeout"},
-				Document: doc,
+		if err := s.c.sleep(ctx, cfg.interval); err != nil {
+			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+				return nil, waitTimeout(last)
 			}
-		}
-		if err := s.c.sleep(ctx, min(poll, remaining)); err != nil {
 			return nil, s.c.transportError(ctx, err)
 		}
+	}
+}
+
+// waitTimeout builds the error for a wait that the context deadline ended.
+func waitTimeout(last *CitationCheckDocument) error {
+	return &DocumentTimeoutError{
+		Problem:  Problem{Code: CodeWaitTimeout, Detail: "the document was not ready before the deadline of the context"},
+		Document: last,
+		Err:      context.DeadlineExceeded,
 	}
 }
 

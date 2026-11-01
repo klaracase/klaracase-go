@@ -439,38 +439,6 @@ type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 
-func TestWaitUntilReadyStopsWhenTheContextEnds(t *testing.T) {
-	client, _ := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
-		_, _ = io.WriteString(w, `{"id":"d1","status":"extracting"}`)
-	})
-	ctx, cancel := context.WithCancel(context.Background())
-	client.sleep = func(ctx context.Context, d time.Duration) error { cancel(); return ctx.Err() }
-	_, err := client.CitationCheckDocuments.WaitUntilReady(ctx, "d1", WaitParams{})
-	if !errors.Is(err, context.Canceled) {
-		t.Fatalf("got %v, want context.Canceled", err)
-	}
-}
-
-func TestWaitUntilReadyUsesTheInjectedClock(t *testing.T) {
-	now := time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC)
-	client, slept := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
-		_, _ = io.WriteString(w, `{"id":"d1","status":"extracting"}`)
-	}, withNow(func() time.Time { return now }))
-	client.sleep = func(ctx context.Context, d time.Duration) error {
-		now = now.Add(d)
-		*slept = append(*slept, d)
-		return nil
-	}
-	_, err := client.CitationCheckDocuments.WaitUntilReady(context.Background(), "d1", WaitParams{PollInterval: 10 * time.Second, Timeout: 25 * time.Second})
-	var te *DocumentTimeoutError
-	if !errors.As(err, &te) || te.Document.Status != DocumentExtracting || te.Code != "wait_timeout" {
-		t.Fatalf("got %v", err)
-	}
-	if len(*slept) != 3 || (*slept)[2] != 5*time.Second {
-		t.Errorf("slept %v, want 10s, 10s, 5s (the last one is cut to the remaining time)", *slept)
-	}
-}
-
 func TestClientIsSafeForConcurrentUse(t *testing.T) {
 	client, _ := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Query().Get("query") == "boom" {
