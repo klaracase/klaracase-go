@@ -49,10 +49,15 @@ func TestCopyLintFindsNoForbiddenWording(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	agenttools, err := filepath.Glob("agenttools/*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
 	files = append(files, goFiles...)
 	files = append(files, internal...)
+	files = append(files, agenttools...)
 	for _, file := range files {
-		if file == "copylint_test.go" {
+		if file == "copylint_test.go" || strings.HasSuffix(file, "_test.go") && strings.HasPrefix(file, "agenttools/") {
 			continue
 		}
 		data, err := os.ReadFile(file)
