@@ -247,7 +247,7 @@ const (
 	ReasonAPIBudgetNotAvailable InsufficientCreditsReason = "api_budget_not_available"
 	// ReasonPlanCreditsExhausted is reserved for a refusal where the API budget plays no part. The
 	// API does not send it today.
-	ReasonPlanCreditsExhausted InsufficientCreditsReason = "plan_credits_exhausted"
+	ReasonPlanCreditsExhausted InsufficientCreditsReason = "plan_credits_exhausted" //nolint:gosec // a reason code of the API, not a credential
 )
 
 // InsufficientCreditsError is an HTTP 402 answer with the code "insufficient_credits". Nothing ran

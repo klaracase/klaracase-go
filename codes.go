@@ -25,7 +25,7 @@ const (
 	// CodeInsufficientCredits means the organization has too few credits (402). A reason can say why; see InsufficientCreditsError.
 	CodeInsufficientCredits = "insufficient_credits"
 	// CodeTokenLimitReached means this API key reached the credit limit set for it (402).
-	CodeTokenLimitReached = "token_limit_reached"
+	CodeTokenLimitReached = "token_limit_reached" //nolint:gosec // an error code of the API, not a credential
 	// CodeVolumeCap is the daily volume cap, which resets at midnight Europe/Berlin (429).
 	CodeVolumeCap = "volume_cap"
 	// CodeBackendUnavailable means the work failed and the charge was given back (503).

@@ -525,7 +525,7 @@ func TestPaymentRefusalsTellTheModelToStopAndAreNeverRetried(t *testing.T) {
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				hits++
 				w.Header().Set("Content-Type", "application/problem+json")
-				w.WriteHeader(402)
+				w.WriteHeader(http.StatusPaymentRequired)
 				_, _ = io.WriteString(w, body)
 			}))
 			defer srv.Close()
