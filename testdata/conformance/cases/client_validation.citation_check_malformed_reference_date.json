@@ -1,0 +1,23 @@
+{
+  "name": "client_validation.citation_check_malformed_reference_date",
+  "description": "A reference_date that is not YYYY-MM-DD is refused before any request. Added by the Go SDK: the checks that need no server run on the client.",
+  "sdk": {
+    "group": "citation_checks",
+    "method": "create",
+    "args": {
+      "text": "x",
+      "reference_date": "2024-5-1"
+    }
+  },
+  "expect": {
+    "request": null,
+    "request_count": 0
+  },
+  "responses": [],
+  "expect_result": {
+    "kind": "error",
+    "class": "ValidationError",
+    "code": "client_validation",
+    "status": null
+  }
+}

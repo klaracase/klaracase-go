@@ -33,7 +33,7 @@ func ExampleDecisionsService_Search() {
 	res, err := client.Decisions.Search(context.Background(), klaracase.SearchDecisionsParams{
 		Query: "Vermögensbetreuungspflicht Untreue",
 		Court: "BGH",
-		Limit: klaracase.Int(5),
+		Limit: 5,
 		// Bridge false is sent as bridge=false: the server adds no register terms.
 		Bridge: klaracase.Bool(false),
 	})
@@ -50,7 +50,7 @@ func ExampleDecisionsService_Get() {
 	client, _ := klaracase.New("klc_your_token_here")
 	// The id may be a UUID, an Aktenzeichen or an ECLI. The client encodes it as one path segment.
 	res, err := client.Decisions.Get(context.Background(), "VIII ZR 271/17", klaracase.GetDecisionParams{
-		Section: "Gründe",
+		Section: klaracase.SectionGruende,
 		Court:   "BGH",
 	})
 	if err != nil {
@@ -62,7 +62,7 @@ func ExampleDecisionsService_Get() {
 
 func ExampleNormsService_Get() {
 	client, _ := klaracase.New("klc_your_token_here")
-	res, err := client.Norms.Get(context.Background(), "Art. 6 DSGVO", klaracase.GetNormParams{Jurisdiction: "EU"})
+	res, err := client.Norms.Get(context.Background(), "Art. 6 DSGVO", klaracase.GetNormParams{Jurisdiction: klaracase.JurisdictionEU})
 	if err != nil {
 		log.Fatal(err)
 	}

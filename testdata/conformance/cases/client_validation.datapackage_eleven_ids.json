@@ -1,0 +1,34 @@
+{
+  "name": "client_validation.datapackage_eleven_ids",
+  "description": "More than 10 ids are refused before any request. Added by the Go SDK: the checks that need no server run on the client.",
+  "sdk": {
+    "group": "datapackages",
+    "method": "create",
+    "args": {
+      "ids": [
+        "a",
+        "b",
+        "c",
+        "d",
+        "e",
+        "f",
+        "g",
+        "h",
+        "i",
+        "j",
+        "k"
+      ]
+    }
+  },
+  "expect": {
+    "request": null,
+    "request_count": 0
+  },
+  "responses": [],
+  "expect_result": {
+    "kind": "error",
+    "class": "ValidationError",
+    "code": "client_validation",
+    "status": null
+  }
+}

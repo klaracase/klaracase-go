@@ -20,7 +20,7 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	cov, err := client.Corpus.Coverage(ctx, klaracase.CoverageParams{Top: klaracase.Int(3)})
+	cov, err := client.Corpus.Coverage(ctx, klaracase.CoverageParams{Top: 3})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "coverage:", err)
 		os.Exit(1)

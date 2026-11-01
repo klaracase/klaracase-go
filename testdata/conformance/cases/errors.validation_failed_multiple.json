@@ -1,13 +1,13 @@
 {
   "name": "errors.validation_failed_multiple",
-  "description": "422 with several fields.",
+  "description": "422 with several fields. The date_to message is the server's wording for an inverted range; this client checks the range itself, so the request here carries a valid range and the mock still answers 422.",
   "sdk": {
     "group": "decisions",
     "method": "search",
     "args": {
       "query": "Untreue",
       "date_from": "2020-01-01",
-      "date_to": "2019-01-01",
+      "date_to": "2020-06-01",
       "limit": 5
     },
     "options": {
@@ -21,7 +21,7 @@
       "query": {
         "query": "Untreue",
         "date_from": "2020-01-01",
-        "date_to": "2019-01-01",
+        "date_to": "2020-06-01",
         "limit": "5"
       },
       "headers": {

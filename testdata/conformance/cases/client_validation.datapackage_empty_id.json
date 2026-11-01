@@ -1,0 +1,25 @@
+{
+  "name": "client_validation.datapackage_empty_id",
+  "description": "An empty id is refused before any request. Added by the Go SDK: the checks that need no server run on the client.",
+  "sdk": {
+    "group": "datapackages",
+    "method": "create",
+    "args": {
+      "ids": [
+        "a",
+        ""
+      ]
+    }
+  },
+  "expect": {
+    "request": null,
+    "request_count": 0
+  },
+  "responses": [],
+  "expect_result": {
+    "kind": "error",
+    "class": "ValidationError",
+    "code": "client_validation",
+    "status": null
+  }
+}

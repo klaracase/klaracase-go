@@ -65,7 +65,7 @@ func main() {
 	res, err := client.Decisions.Search(context.Background(), klaracase.SearchDecisionsParams{
 		Query: "Vermögensbetreuungspflicht Untreue",
 		Court: "BGH",
-		Limit: klaracase.Int(5),
+		Limit: 5,
 	})
 	if err != nil {
 		log.Fatal(err)
@@ -82,14 +82,23 @@ returns a `*klaracase.ConfigurationError` at once, not a 401 later.
 
 ### Optional values
 
-A string parameter that is empty is not sent. A number or a boolean is a pointer, so that `0` and
-`false` can be sent and "not set" stays different. Use `klaracase.Int(n)` and `klaracase.Bool(b)`:
+A string, a number and a slice that are unset are not sent. A zero number means "not set", because
+no integer parameter of the API accepts zero. A boolean is a `*bool`, so that `false` can be sent
+and "not set" stays different. Use `klaracase.Bool(b)` or the generic `klaracase.Ptr(v)`:
 
 ```go
-klaracase.SearchDecisionsParams{Query: "Untreue", Bridge: klaracase.Bool(false), Limit: klaracase.Int(5)}
+klaracase.SearchDecisionsParams{Query: "Untreue", Bridge: klaracase.Bool(false), Limit: 5}
 ```
 
-An empty slice is not sent. A list such as `CitedStatutes` is sent as `cited_statutes[]=StGB&cited_statutes[]=StPO`.
+A list such as `CitedStatutes` is sent as `cited_statutes[]=StGB&cited_statutes[]=StPO`.
+Dates are `klaracase.Date` values in the form `YYYY-MM-DD`. Enums such as `Branch`, `Section`,
+`Jurisdiction` and `Statute` are typed strings with constants. A value that is not a constant is
+sent as it is. The server decides what it accepts.
+
+The client checks only what needs no server and sends nothing when a check fails: a missing
+required value, a date that is not `YYYY-MM-DD`, `DateFrom` after `DateTo`, `RnFrom` after `RnTo`,
+and a datapackage that does not hold 1 to 10 ids. The error is a `*klaracase.ValidationError` with
+the code `client_validation`.
 
 ## Operations
 

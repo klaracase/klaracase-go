@@ -152,3 +152,62 @@ const (
 	// DocumentFailed could not be processed; see the error_code.
 	DocumentFailed DocumentStatus = "failed"
 )
+
+// Section is a named part of a decision that GetDecisionParams.Section can select. The server
+// matches the name without regard to case and umlauts.
+type Section string
+
+// Decision sections. DecisionResponse.AvailableSections lists the ones a decision has.
+const (
+	// SectionTenor is the operative part of the decision.
+	SectionTenor Section = "Tenor"
+	// SectionLeitsatz is the headnote.
+	SectionLeitsatz Section = "Leitsatz"
+	// SectionTatbestand is the statement of facts.
+	SectionTatbestand Section = "Tatbestand"
+	// SectionGruende is the reasoning.
+	SectionGruende Section = "Gründe"
+)
+
+// Jurisdiction is a statute jurisdiction code. A value this SDK does not know is still kept.
+type Jurisdiction string
+
+// Statute jurisdictions.
+const (
+	// JurisdictionDE is German law.
+	JurisdictionDE Jurisdiction = "DE"
+	// JurisdictionEU is EU law and the Treaties.
+	JurisdictionEU Jurisdiction = "EU"
+	// JurisdictionXI is international law.
+	JurisdictionXI Jurisdiction = "XI"
+)
+
+// ArtifactKind selects decisions or statutes in a facet request (FacetsParams.Type).
+type ArtifactKind string
+
+// Artifact kinds for facet counts.
+const (
+	// ArtifactKindDecision counts decisions.
+	ArtifactKindDecision ArtifactKind = "decision"
+	// ArtifactKindLaw counts statutes.
+	ArtifactKindLaw ArtifactKind = "law"
+)
+
+// Statute is a statute abbreviation that SearchDecisionsParams.CitedStatutes accepts. The
+// server holds a fixed list. A value outside the list is sent as it is and the server decides.
+type Statute string
+
+// Statutes that the cited_statutes filter accepts.
+const (
+	StatuteStGB   Statute = "StGB"
+	StatuteStPO   Statute = "StPO"
+	StatuteInsO   Statute = "InsO"
+	StatuteDSGVO  Statute = "DSGVO"
+	StatuteGDPR   Statute = "GDPR"
+	StatuteBDSG   Statute = "BDSG"
+	StatuteBauGB  Statute = "BauGB"
+	StatuteBBauG  Statute = "BBauG"
+	StatuteBauNVO Statute = "BauNVO"
+	StatuteStVG   Statute = "StVG"
+	StatuteStVO   Statute = "StVO"
+)

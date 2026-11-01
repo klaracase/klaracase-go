@@ -76,10 +76,12 @@ type NotFoundError struct{ Problem }
 type ConflictError struct{ Problem }
 
 // ValidationError is an HTTP 422 answer. The client also returns it, with Code
-// "client_validation" and Status 0, when a call is wrong before any request is sent.
+// "client_validation" and Status 0, when a call is wrong before any request is sent. The
+// client checks only what needs no server: a missing required value, a malformed date, a
+// range that runs backwards, a list of the wrong size.
 type ValidationError struct {
 	Problem
-	// Errors maps a request field to its list of messages. It is nil for a client side error.
+	// Errors maps a request field, by its wire name, to its list of messages.
 	Errors map[string][]string
 }
 
@@ -226,9 +228,4 @@ func AsError(err error) (*Error, bool) {
 		return e, true
 	}
 	return nil, false
-}
-
-// clientValidation builds the error for a call that is wrong before any request is sent.
-func clientValidation(format string, args ...any) error {
-	return &ValidationError{Problem: Problem{Code: "client_validation", Detail: fmt.Sprintf(format, args...)}}
 }

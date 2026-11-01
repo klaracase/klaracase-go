@@ -192,12 +192,10 @@ func (a confArgs) str(k string) string {
 	return s
 }
 
-func (a confArgs) intp(k string) *int {
-	f, ok := a[k].(float64)
-	if !ok {
-		return nil
-	}
-	return Int(int(f))
+// num reads an integer argument. A missing argument is 0, which the client leaves out.
+func (a confArgs) num(k string) int {
+	f, _ := a[k].(float64)
+	return int(f)
 }
 
 func (a confArgs) boolp(k string) *bool {
@@ -213,6 +211,14 @@ func (a confArgs) strs(k string) []string {
 	var out []string
 	for _, v := range list {
 		out = append(out, v.(string))
+	}
+	return out
+}
+
+func (a confArgs) statutes(k string) []Statute {
+	var out []Statute
+	for _, v := range a.strs(k) {
+		out = append(out, Statute(v))
 	}
 	return out
 }
@@ -251,39 +257,39 @@ func dispatch(t *testing.T, ctx context.Context, c *Client, group *string, metho
 	switch name {
 	case "search":
 		return ret(c.Search(ctx, CrossTypeSearchParams{
-			Query: a.str("query"), Jurisdiction: a.str("jurisdiction"), Court: a.str("court"),
-			Branch: Branch(a.str("branch")), DateFrom: a.str("date_from"), DateTo: a.str("date_to"),
+			Query: a.str("query"), Jurisdiction: Jurisdiction(a.str("jurisdiction")), Court: a.str("court"),
+			Branch: Branch(a.str("branch")), DateFrom: Date(a.str("date_from")), DateTo: Date(a.str("date_to")),
 			Mode: Mode(a.str("mode")), DocumentType: DocumentType(a.str("document_type")),
-			CitedNorm: a.str("cited_norm"), CitedStatutes: a.strs("cited_statutes"),
-			Limit: a.intp("limit"), Bridge: a.boolp("bridge"),
+			CitedNorm: a.str("cited_norm"), CitedStatutes: a.statutes("cited_statutes"),
+			Limit: a.num("limit"), Bridge: a.boolp("bridge"),
 		}))
 	case "decisions.search":
 		return ret(c.Decisions.Search(ctx, SearchDecisionsParams{
 			Query: a.str("query"), Court: a.str("court"), Branch: Branch(a.str("branch")),
 			DocumentType: DocumentType(a.str("document_type")), CitedNorm: a.str("cited_norm"),
-			CitedStatutes: a.strs("cited_statutes"), DateFrom: a.str("date_from"), DateTo: a.str("date_to"),
-			Mode: Mode(a.str("mode")), Limit: a.intp("limit"), Page: a.intp("page"), Bridge: a.boolp("bridge"),
+			CitedStatutes: a.statutes("cited_statutes"), DateFrom: Date(a.str("date_from")), DateTo: Date(a.str("date_to")),
+			Mode: Mode(a.str("mode")), Limit: a.num("limit"), Page: a.num("page"), Bridge: a.boolp("bridge"),
 		}))
 	case "decisions.get":
 		return ret(c.Decisions.Get(ctx, a.str("id"), GetDecisionParams{
-			MaxChars: a.intp("max_chars"), RnFrom: a.intp("rn_from"), RnTo: a.intp("rn_to"),
-			Section: a.str("section"), Court: a.str("court"), Date: a.str("date"),
+			MaxChars: a.num("max_chars"), RnFrom: a.num("rn_from"), RnTo: a.num("rn_to"),
+			Section: Section(a.str("section")), Court: a.str("court"), Date: Date(a.str("date")),
 		}))
 	case "decisions.citations":
 		return ret(c.Decisions.Citations(ctx, a.str("id"), CitationsParams{
-			Direction: Direction(a.str("direction")), Depth: a.intp("depth"), Page: a.intp("page"),
-			Court: a.str("court"), Date: a.str("date"),
+			Direction: Direction(a.str("direction")), Depth: a.num("depth"), Page: a.num("page"),
+			Court: a.str("court"), Date: Date(a.str("date")),
 		}))
 	case "norms.get":
-		return ret(c.Norms.Get(ctx, a.str("reference"), GetNormParams{Jurisdiction: a.str("jurisdiction")}))
+		return ret(c.Norms.Get(ctx, a.str("reference"), GetNormParams{Jurisdiction: Jurisdiction(a.str("jurisdiction"))}))
 	case "datapackages.create":
 		return ret(c.Datapackages.Create(ctx, CreateDatapackageParams{
 			IDs: a.strs("ids"), IncludeCitations: a.boolp("include_citations"),
-			FullText: a.boolp("full_text"), MaxChars: a.intp("max_chars"),
+			FullText: a.boolp("full_text"), MaxChars: a.num("max_chars"),
 		}))
 	case "citation_checks.create":
 		return ret(c.CitationChecks.Create(ctx, CreateCitationCheckParams{
-			Text: a.str("text"), DocumentID: a.str("document_id"), ReferenceDate: a.str("reference_date"),
+			Text: a.str("text"), DocumentID: a.str("document_id"), ReferenceDate: Date(a.str("reference_date")),
 		}))
 	case "citation_checks.get":
 		return ret(c.CitationChecks.Get(ctx, a.str("run_id")))
@@ -298,10 +304,10 @@ func dispatch(t *testing.T, ctx context.Context, c *Client, group *string, metho
 			PollInterval: a.seconds("poll_interval"), Timeout: a.seconds("timeout"),
 		}))
 	case "corpus.coverage":
-		return ret(c.Corpus.Coverage(ctx, CoverageParams{Branch: Branch(a.str("branch")), Top: a.intp("top")}))
+		return ret(c.Corpus.Coverage(ctx, CoverageParams{Branch: Branch(a.str("branch")), Top: a.num("top")}))
 	case "corpus.facets":
 		return ret(c.Corpus.Facets(ctx, FacetField(a.str("field")), FacetsParams{
-			Type: a.str("type"), Norm: a.str("norm"), Prefix: a.str("prefix"),
+			Type: ArtifactKind(a.str("type")), Norm: a.str("norm"), Prefix: a.str("prefix"),
 		}))
 	}
 	t.Fatalf("the runner does not know %q", name)
@@ -312,8 +318,19 @@ func dispatch(t *testing.T, ctx context.Context, c *Client, group *string, metho
 
 func TestConformance(t *testing.T) {
 	files, err := filepath.Glob(filepath.Join(confDir, "cases", "*.json"))
-	if err != nil || len(files) != 102 {
-		t.Fatalf("expected 102 conformance cases, found %d (err %v)", len(files), err)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 102 cases come from the shared pack. The cases named client_validation.* were added by
+	// this SDK for the checks that run on the client.
+	shared := 0
+	for _, file := range files {
+		if !strings.HasPrefix(filepath.Base(file), "client_validation.") {
+			shared++
+		}
+	}
+	if shared != 102 {
+		t.Fatalf("expected 102 shared conformance cases, found %d", shared)
 	}
 	for _, file := range files {
 		data, err := os.ReadFile(file)

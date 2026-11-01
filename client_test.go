@@ -538,14 +538,14 @@ func TestPathEscapeFollowsRFC3986(t *testing.T) {
 	}
 }
 
-func TestJSONBodyOmitsUnsetFieldsButKeepsFalseAndZero(t *testing.T) {
+func TestJSONBodyOmitsUnsetFieldsButKeepsFalse(t *testing.T) {
 	var got map[string]any
 	client, _ := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewDecoder(r.Body).Decode(&got)
 		_, _ = io.WriteString(w, "{}")
 	})
 	_, err := client.Datapackages.Create(context.Background(), CreateDatapackageParams{
-		IDs: []string{"a"}, IncludeCitations: Bool(false), MaxChars: Int(0),
+		IDs: []string{"a"}, IncludeCitations: Bool(false),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -553,10 +553,9 @@ func TestJSONBodyOmitsUnsetFieldsButKeepsFalseAndZero(t *testing.T) {
 	if v, ok := got["include_citations"]; !ok || v != false {
 		t.Errorf("include_citations missing or wrong: %v", got)
 	}
-	if v, ok := got["max_chars"]; !ok || v != float64(0) {
-		t.Errorf("max_chars missing or wrong: %v", got)
-	}
-	if _, ok := got["full_text"]; ok {
-		t.Errorf("full_text must be absent: %v", got)
+	for _, key := range []string{"max_chars", "full_text"} {
+		if _, ok := got[key]; ok {
+			t.Errorf("%s must be absent: %v", key, got)
+		}
 	}
 }

@@ -1,0 +1,24 @@
+{
+  "name": "client_validation.search_inverted_dates",
+  "description": "date_from after date_to is refused before any request. Added by the Go SDK: the checks that need no server run on the client.",
+  "sdk": {
+    "group": "decisions",
+    "method": "search",
+    "args": {
+      "query": "Untreue",
+      "date_from": "2020-01-01",
+      "date_to": "2019-01-01"
+    }
+  },
+  "expect": {
+    "request": null,
+    "request_count": 0
+  },
+  "responses": [],
+  "expect_result": {
+    "kind": "error",
+    "class": "ValidationError",
+    "code": "client_validation",
+    "status": null
+  }
+}

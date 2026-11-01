@@ -18,7 +18,7 @@
 //	res, err := client.Decisions.Search(ctx, klaracase.SearchDecisionsParams{
 //		Query: "Vermögensbetreuungspflicht Untreue",
 //		Court: "BGH",
-//		Limit: klaracase.Int(5),
+//		Limit: 5,
 //	})
 //	if err != nil {
 //		log.Fatal(err)
@@ -29,8 +29,8 @@
 //
 // # Optional values
 //
-// A string parameter that is empty is not sent. A number or a boolean is a pointer, so that
-// zero and false can be sent and "unset" stays different: use [Int] and [Bool].
+// A string, a number and a slice that are unset are not sent. A zero number means "not set".
+// A boolean is a *bool so that false can be sent: use [Bool] or [Ptr].
 //
 // # Responses
 //

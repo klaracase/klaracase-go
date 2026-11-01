@@ -182,21 +182,21 @@ func NewFromEnv(opts ...Option) (*Client, error) {
 
 // Search searches statutes and court decisions together (GET /search). It costs 1 credit.
 func (c *Client) Search(ctx context.Context, p CrossTypeSearchParams) (*CrossTypeSearchResponse, error) {
-	if p.Query == "" {
-		return nil, clientValidation("Query is required")
+	if err := validateCrossTypeSearch(p); err != nil {
+		return nil, err
 	}
 	var q query
 	q.str("query", p.Query)
-	q.str("jurisdiction", p.Jurisdiction)
+	q.str("jurisdiction", string(p.Jurisdiction))
 	q.str("court", p.Court)
 	q.str("branch", string(p.Branch))
-	q.str("date_from", p.DateFrom)
-	q.str("date_to", p.DateTo)
+	q.str("date_from", string(p.DateFrom))
+	q.str("date_to", string(p.DateTo))
 	q.str("mode", string(p.Mode))
 	q.str("document_type", string(p.DocumentType))
 	q.str("cited_norm", p.CitedNorm)
-	q.list("cited_statutes", p.CitedStatutes)
-	q.intp("limit", p.Limit)
+	addList(&q, "cited_statutes", p.CitedStatutes)
+	q.num("limit", p.Limit)
 	q.boolp("bridge", p.Bridge)
 	out := new(CrossTypeSearchResponse)
 	err := c.do(ctx, request{method: http.MethodGet, endpoint: "GET /search", path: "/search", query: q}, out)

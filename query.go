@@ -7,7 +7,8 @@ import (
 )
 
 // query builds a query string in the order the parameters were added. A parameter that is
-// empty, nil or an empty list is not added. A false bool and a zero int are values and are added.
+// empty, zero, nil or an empty list is not added. A *bool that points to false is a value and
+// is added.
 type query struct {
 	pairs []string
 }
@@ -26,9 +27,11 @@ func (q *query) str(name, value string) {
 	}
 }
 
-func (q *query) intp(name string, value *int) {
-	if value != nil {
-		q.add(name, strconv.Itoa(*value))
+// num adds an integer parameter. Zero means "not set", because no parameter of the API
+// accepts zero as a value.
+func (q *query) num(name string, value int) {
+	if value != 0 {
+		q.add(name, strconv.Itoa(value))
 	}
 }
 
@@ -38,10 +41,10 @@ func (q *query) boolp(name string, value *bool) {
 	}
 }
 
-// list adds name[]=a&name[]=b, the form that PHP and Laravel read as an array.
-func (q *query) list(name string, values []string) {
+// addList adds name[]=a&name[]=b, the form that PHP and Laravel read as an array.
+func addList[S ~string](q *query, name string, values []S) {
 	for _, v := range values {
-		q.add(name+"[]", v)
+		q.add(name+"[]", string(v))
 	}
 }
 
@@ -70,11 +73,21 @@ func escapeSegment(s string) string {
 	return b.String()
 }
 
-// Int returns a pointer to n. Use it to set an optional integer parameter, including zero.
+// Ptr returns a pointer to v. Use it for an optional value that needs an address, such as
+// the Bridge, IncludeCitations and FullText parameters, where false must stay different from
+// "not set".
+func Ptr[T any](v T) *T { return &v }
+
+// Int returns a pointer to n. It is Ptr for an int.
+//
+// Since Go 1.26 the built in new accepts an expression, so new(5) does the same and these
+// helpers are optional there. This module still supports Go 1.24.
 func Int(n int) *int { return &n }
 
-// Bool returns a pointer to b. Use it to set an optional boolean parameter, including false.
+// Bool returns a pointer to b. Use it to send false for an optional boolean parameter. It is
+// Ptr for a bool. With Go 1.26 or newer you can write new(false) instead.
 func Bool(b bool) *bool { return &b }
 
-// String returns a pointer to s. It is a convenience for optional string values.
+// String returns a pointer to s. It is Ptr for a string. With Go 1.26 or newer you can write
+// new("text") instead.
 func String(s string) *string { return &s }
