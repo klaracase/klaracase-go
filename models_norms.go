@@ -1,6 +1,9 @@
 package klaracase
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"time"
+)
 
 // NormLaw describes the statute that a norm belongs to.
 type NormLaw struct {
@@ -15,15 +18,16 @@ type NormLaw struct {
 	// LawLevel is the level of the statute, for example "BUND" or "EU".
 	LawLevel string `json:"law_level"`
 	// Jurisdiction is DE or EU.
-	Jurisdiction string `json:"jurisdiction"`
+	Jurisdiction Jurisdiction `json:"jurisdiction"`
 	// SourceURL is the address of the page the norm text comes from.
 	SourceURL string `json:"source_url"`
 	// UpstreamStatus is the state of the source, for example "confirmed".
 	UpstreamStatus string `json:"upstream_status"`
-	// UpstreamLastSeenAt is the last time the source was seen, RFC 3339.
-	UpstreamLastSeenAt string `json:"upstream_last_seen_at"`
+	// UpstreamLastSeenAt is the last time the source was seen. The server writes it as a UTC
+	// instant; it is parsed to the same instant.
+	UpstreamLastSeenAt time.Time `json:"upstream_last_seen_at"`
 	// UpstreamMissingSince is the time the source went missing, or nil.
-	UpstreamMissingSince *string `json:"upstream_missing_since"`
+	UpstreamMissingSince *time.Time `json:"upstream_missing_since"`
 	// Extra holds unknown keys.
 	Extra map[string]json.RawMessage `json:"-"`
 }
@@ -66,13 +70,13 @@ type NormVersion struct {
 	// ID is the UUID of the version.
 	ID string `json:"id"`
 	// LastAmendmentDate is the date of the last amendment.
-	LastAmendmentDate string `json:"last_amendment_date"`
+	LastAmendmentDate Date `json:"last_amendment_date"`
 	// LastAmendmentDateBasis says where LastAmendmentDate comes from.
 	LastAmendmentDateBasis string `json:"last_amendment_date_basis"`
-	// SourceFetchedAt is the time the text was fetched, RFC 3339.
-	SourceFetchedAt string `json:"source_fetched_at"`
-	// SourceLastSeenAt is the last time the source was seen, RFC 3339.
-	SourceLastSeenAt string `json:"source_last_seen_at"`
+	// SourceFetchedAt is the time the text was fetched.
+	SourceFetchedAt time.Time `json:"source_fetched_at"`
+	// SourceLastSeenAt is the last time the source was seen.
+	SourceLastSeenAt time.Time `json:"source_last_seen_at"`
 	// Extra holds unknown keys.
 	Extra map[string]json.RawMessage `json:"-"`
 }

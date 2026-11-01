@@ -1,6 +1,9 @@
 package klaracase
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"time"
+)
 
 // CheckProgress counts the citations of a run.
 type CheckProgress struct {
@@ -27,7 +30,7 @@ type ReasonCount struct {
 // UniqueCitation is one distinct citation of the text with its verdict.
 type UniqueCitation struct {
 	// KeyBasis says how the citation was keyed, for example "matched_decision" or "canonical".
-	KeyBasis string `json:"key_basis"`
+	KeyBasis KeyBasis `json:"key_basis"`
 	// TargetArtifactID is the UUID of the matched decision, or nil.
 	TargetArtifactID *string `json:"target_artifact_id"`
 	// Canonical is the canonical form, for example "BGH 1 StR 185/01".
@@ -39,7 +42,7 @@ type UniqueCitation struct {
 	// Verdict is the verdict of the citation.
 	Verdict Verdict `json:"verdict"`
 	// ReferenceType is "case" or "statute".
-	ReferenceType string `json:"reference_type"`
+	ReferenceType ReferenceType `json:"reference_type"`
 	// Extra holds unknown keys.
 	Extra map[string]json.RawMessage `json:"-"`
 }
@@ -87,7 +90,7 @@ type MatchedDecision struct {
 	// Court is the court short form.
 	Court string `json:"court"`
 	// Date is the decision date.
-	Date string `json:"date"`
+	Date Date `json:"date"`
 	// Extra holds unknown keys.
 	Extra map[string]json.RawMessage `json:"-"`
 }
@@ -111,9 +114,9 @@ type FindingEvidence struct {
 	// Reason is the reason for the verdict, for example "exact_match".
 	Reason string `json:"reason"`
 	// MatchStrength is how strong the match is, for example "exact".
-	MatchStrength string `json:"match_strength"`
+	MatchStrength MatchStrength `json:"match_strength"`
 	// CitationDateSource says which date a statute citation used: "sentence", "reference_date" or "none".
-	CitationDateSource string `json:"citation_date_source"`
+	CitationDateSource CitationDateSource `json:"citation_date_source"`
 	// Extra holds unknown keys.
 	Extra map[string]json.RawMessage `json:"-"`
 }
@@ -127,13 +130,13 @@ type Finding struct {
 	// Canonical is the canonical form.
 	Canonical string `json:"canonical"`
 	// Type is "case" or "statute".
-	Type string `json:"type"`
+	Type ReferenceType `json:"type"`
 	// Role is the role of the citation, or nil.
 	Role *string `json:"role"`
 	// Verdict is the verdict. VerdictNotFound is absence of evidence in the corpus, nothing more.
 	Verdict Verdict `json:"verdict"`
 	// ExternalStatus says what the external register check did, for example "skipped".
-	ExternalStatus string `json:"external_status"`
+	ExternalStatus ExternalStatus `json:"external_status"`
 	// StartOffset is the start of the citation in your text, in Unicode code points.
 	StartOffset int `json:"start_offset"`
 	// EndOffset is the end of the citation in your text, in Unicode code points.
@@ -145,7 +148,7 @@ type Finding struct {
 	// MatchedDecision is the matched decision, or nil.
 	MatchedDecision *MatchedDecision `json:"matched_decision"`
 	// SubdivisionCheck says whether a subdivision was checked.
-	SubdivisionCheck string `json:"subdivision_check"`
+	SubdivisionCheck SubdivisionCheck `json:"subdivision_check"`
 	// SubdivisionAdvisory is a note about the subdivision, or nil.
 	SubdivisionAdvisory *string `json:"subdivision_advisory"`
 	// CheckScope says what the check covered.
@@ -153,15 +156,17 @@ type Finding struct {
 	// AmbiguityAdvisory is a note about an ambiguous citation, or nil.
 	AmbiguityAdvisory *string `json:"ambiguity_advisory"`
 	// Coverage is the coverage note of the finding. It is kept raw because its shape varies.
+	// A JSON null is read as nil.
 	Coverage json.RawMessage `json:"coverage"`
-	// CoverageBoundary is the coverage boundary of the finding. It is kept raw.
+	// CoverageBoundary is the coverage boundary of the finding. It is kept raw. A JSON null is
+	// read as nil.
 	CoverageBoundary json.RawMessage `json:"coverage_boundary"`
 	// CoverageAdvisory is a note about coverage, or nil.
 	CoverageAdvisory *string `json:"coverage_advisory"`
 	// Evidence explains the verdict.
 	Evidence *FindingEvidence `json:"evidence"`
 	// DisputedAt is the time the finding was disputed, or nil.
-	DisputedAt *string `json:"disputed_at"`
+	DisputedAt *time.Time `json:"disputed_at"`
 	// Extra holds unknown keys.
 	Extra map[string]json.RawMessage `json:"-"`
 }
@@ -195,15 +200,16 @@ type CitationCheckRun struct {
 	// FindingsUnavailableReason says why Findings is empty, or nil.
 	FindingsUnavailableReason *string `json:"findings_unavailable_reason"`
 	// FindingsPurgedAt is the time the findings were purged, or nil.
-	FindingsPurgedAt *string `json:"findings_purged_at"`
+	FindingsPurgedAt *time.Time `json:"findings_purged_at"`
 	// Findings lists every citation occurrence.
 	Findings []Finding `json:"findings"`
-	// SubmittedAt is the time the text was submitted, RFC 3339.
-	SubmittedAt string `json:"submitted_at"`
+	// SubmittedAt is the time the text was submitted. The server writes it with the offset
+	// +00:00; it is parsed to the same instant.
+	SubmittedAt time.Time `json:"submitted_at"`
 	// CompletedAt is the time the run ended, or nil.
-	CompletedAt *string `json:"completed_at"`
-	// CreatedAt is the time the run was created, RFC 3339.
-	CreatedAt string `json:"created_at"`
+	CompletedAt *time.Time `json:"completed_at"`
+	// CreatedAt is the time the run was created.
+	CreatedAt time.Time `json:"created_at"`
 	// PayloadTruncated is true when the server cut the payload.
 	PayloadTruncated bool `json:"payload_truncated"`
 }
@@ -231,10 +237,10 @@ type CitationCheckDocument struct {
 	QuotedCredits *int `json:"quoted_credits"`
 	// ErrorCode is why a failed document failed, or nil.
 	ErrorCode *string `json:"error_code"`
-	// ExpiresAt is the time an unused upload expires, RFC 3339.
-	ExpiresAt string `json:"expires_at"`
-	// CreatedAt is the time of the upload, RFC 3339.
-	CreatedAt string `json:"created_at"`
+	// ExpiresAt is the time an unused upload expires.
+	ExpiresAt time.Time `json:"expires_at"`
+	// CreatedAt is the time of the upload.
+	CreatedAt time.Time `json:"created_at"`
 }
 
 // UnmarshalJSON implements json.Unmarshaler and keeps unknown keys in Extra.
@@ -279,10 +285,27 @@ func (x *FindingEvidence) UnmarshalJSON(b []byte) error {
 	return decodeWithExtra(b, (*plain)(x), &x.Extra)
 }
 
-// UnmarshalJSON implements json.Unmarshaler and keeps unknown keys in Extra.
+// UnmarshalJSON implements json.Unmarshaler and keeps unknown keys in Extra. It reads a JSON
+// null in Coverage and CoverageBoundary as nil.
 func (x *Finding) UnmarshalJSON(b []byte) error {
 	type plain Finding
-	return decodeWithExtra(b, (*plain)(x), &x.Extra)
+	if err := decodeWithExtra(b, (*plain)(x), &x.Extra); err != nil {
+		return err
+	}
+	x.Coverage = nilIfNull(x.Coverage)
+	x.CoverageBoundary = nilIfNull(x.CoverageBoundary)
+	return nil
+}
+
+// Excerpt returns the part of text that this finding covers. Pass the text you sent to
+// CitationChecks.Create. The offsets count Unicode code points, not bytes, so the text is cut
+// by runes. Excerpt returns the empty string when the offsets do not fit the text.
+func (x *Finding) Excerpt(text string) string {
+	runes := []rune(text)
+	if x.StartOffset < 0 || x.EndOffset < x.StartOffset || x.EndOffset > len(runes) {
+		return ""
+	}
+	return string(runes[x.StartOffset:x.EndOffset])
 }
 
 // UnmarshalJSON implements json.Unmarshaler and keeps unknown keys in Extra.

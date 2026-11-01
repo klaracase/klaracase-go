@@ -140,6 +140,23 @@ type DocumentTimeoutError struct {
 	Document *CitationCheckDocument
 }
 
+// DecodeError means the API answered with a success status, but the body does not fit the
+// types of this SDK, for example a value of the wrong type or a body that is not JSON. The call
+// may already have been charged, so the answer is kept: Raw holds the whole body, and Body
+// holds its first 1000 characters for a log line. The client returns no response value
+// with this error.
+//
+// Code is "invalid_response" and Status is the HTTP status. Err is the decoder error.
+type DecodeError struct {
+	Problem
+	// Err is the error of the JSON decoder.
+	Err error
+	// Body is the body, cut to 1000 characters.
+	Body string
+	// Raw is the whole body as the server sent it.
+	Raw json.RawMessage
+}
+
 // ConfigurationError means the client cannot be built: no token, a bad base URL or an
 // invalid option. It is not an API problem and has no code or status.
 type ConfigurationError struct {
@@ -164,6 +181,14 @@ func (e *TimeoutError) Error() string {
 		return "klaracase: request timed out"
 	}
 	return "klaracase: request timed out: " + e.Err.Error()
+}
+
+// Error implements the error interface.
+func (e *DecodeError) Error() string {
+	if e.Err == nil {
+		return "klaracase: the answer could not be decoded"
+	}
+	return "klaracase: the answer could not be decoded: " + e.Err.Error()
 }
 
 // Error implements the error interface.
@@ -213,6 +238,14 @@ func (e *TransportError) Unwrap() []error {
 
 // Unwrap returns the embedded TransportError, so a TimeoutError also matches *TransportError.
 func (e *TimeoutError) Unwrap() []error { return []error{&e.TransportError} }
+
+// Unwrap returns the embedded Error and the decoder error.
+func (e *DecodeError) Unwrap() []error {
+	if e.Err == nil {
+		return []error{&e.Problem}
+	}
+	return []error{&e.Problem, e.Err}
+}
 
 // Unwrap returns the embedded Error so that errors.As finds *Error.
 func (e *DocumentFailedError) Unwrap() error { return &e.Problem }

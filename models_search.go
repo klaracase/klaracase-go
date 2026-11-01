@@ -44,10 +44,12 @@ type DecisionHit struct {
 	Aktenzeichen string `json:"aktenzeichen"`
 	// Court is the court short form.
 	Court string `json:"court"`
-	// Date is the decision date, YYYY-MM-DD.
-	Date string `json:"date"`
+	// ArtifactType is "DECISION" in a cross type search and empty in a decision search.
+	ArtifactType ArtifactType `json:"artifact_type,omitzero"`
+	// Date is the decision date.
+	Date Date `json:"date"`
 	// DocumentType is the document type, for example "Urteil".
-	DocumentType string `json:"document_type"`
+	DocumentType DocumentType `json:"document_type"`
 	// Title is the title of the decision.
 	Title string `json:"title"`
 	// Snippet is the best passage, with <mark> tags.
@@ -64,8 +66,13 @@ type DecisionHit struct {
 	FortgeltungChecked bool `json:"fortgeltung_checked"`
 	// FortgeltungNote warns that the decision may have been quashed or superseded. Show it.
 	FortgeltungNote string `json:"fortgeltung_note"`
-	// Confidence is the confidence label of the hit, for example "high".
-	Confidence string `json:"confidence"`
+	// DateSource says where the stored date comes from. The server sends it for a scanned
+	// decision whose date may be wrong. The value is kept raw because its shape is not fixed.
+	DateSource json.RawMessage `json:"date_source,omitempty"`
+	// DateConfidence says how far the stored date can be trusted. It is kept raw like DateSource.
+	DateConfidence json.RawMessage `json:"date_confidence,omitempty"`
+	// Confidence is the confidence band of the hit.
+	Confidence Confidence `json:"confidence"`
 	// Extra holds unknown keys.
 	Extra map[string]json.RawMessage `json:"-"`
 }
@@ -92,56 +99,45 @@ type DecisionSearchResponse struct {
 	// Limit is the limit that was applied.
 	Limit int `json:"limit"`
 	// Mode is the retrieval mode that was used.
-	Mode string `json:"mode"`
+	Mode Mode `json:"mode"`
 	// FrequentlyCitedByResults lists decisions that many hits cite. The rows are kept raw.
 	FrequentlyCitedByResults []json.RawMessage `json:"frequently_cited_by_results"`
 	// QueryExpansion reports the query expansion outcome.
 	QueryExpansion *QueryExpansion `json:"query_expansion"`
-	// TopConfidence is the confidence of the best hit.
-	TopConfidence string `json:"top_confidence"`
+	// TopConfidence is the confidence band of the best hit. It is empty when not measured.
+	TopConfidence Confidence `json:"top_confidence"`
 }
 
-// SearchHit is one row of a cross type search. It is a statute row (ArtifactType "LAW") or a
-// decision row (ArtifactType "DECISION"). Keys that belong to one kind only are nil in the other.
-type SearchHit struct {
-	// ID is the UUID of the statute or decision.
+// LawHit is one statute row of a cross type search. A statute row carries no Aktenzeichen,
+// court, date or document type. The server sends those four keys as null, and they stay in
+// Extra.
+type LawHit struct {
+	// ID is the UUID of the statute section.
 	ID string `json:"id"`
-	// ArtifactType is "LAW" or "DECISION".
-	ArtifactType string `json:"artifact_type"`
-	// Aktenzeichen is the file number (decisions only).
-	Aktenzeichen *string `json:"aktenzeichen"`
-	// Court is the court short form (decisions only).
-	Court *string `json:"court"`
-	// Date is the decision date (decisions only).
-	Date *string `json:"date"`
-	// DocumentType is the decision document type (decisions only).
-	DocumentType *string `json:"document_type"`
+	// ArtifactType is "LAW".
+	ArtifactType ArtifactType `json:"artifact_type"`
 	// Title is the title of the hit.
 	Title string `json:"title"`
 	// Snippet is the best passage, with <mark> tags.
 	Snippet string `json:"snippet"`
 	// Snippets lists the matching passages.
 	Snippets []Snippet `json:"snippets"`
-	// ChunkTitle names the section of the best passage.
+	// ChunkTitle names the section of the best passage, or nil.
 	ChunkTitle *string `json:"chunk_title"`
-	// RnRange is the range of margin numbers of the best passage.
+	// RnRange is nil for a statute row.
 	RnRange *string `json:"rn_range"`
-	// Fundstelle is the printed source of the decision.
+	// Fundstelle is nil for a statute row.
 	Fundstelle *string `json:"fundstelle"`
-	// Breadcrumb is the position of a statute section (statutes only).
+	// Breadcrumb is the position of the statute section, or nil.
 	Breadcrumb *string `json:"breadcrumb"`
-	// Abbreviation is the statute abbreviation, for example "StGB" (statutes only).
-	Abbreviation *string `json:"abbreviation"`
-	// LawType is the kind of statute (statutes only).
-	LawType *string `json:"law_type"`
-	// Jurisdiction is DE, EU or XI (statutes only).
-	Jurisdiction *string `json:"jurisdiction"`
-	// FortgeltungChecked is false when present: the API does not check whether a decision is still good law (decisions only).
-	FortgeltungChecked *bool `json:"fortgeltung_checked"`
-	// FortgeltungNote warns that the decision may have been quashed or superseded (decisions only).
-	FortgeltungNote *string `json:"fortgeltung_note"`
-	// Confidence is the confidence label of the hit.
-	Confidence string `json:"confidence"`
+	// Abbreviation is the statute abbreviation, for example "StGB".
+	Abbreviation string `json:"abbreviation"`
+	// LawType is the kind of statute, for example "Gesetz".
+	LawType string `json:"law_type"`
+	// Jurisdiction is DE, EU or XI.
+	Jurisdiction Jurisdiction `json:"jurisdiction"`
+	// Confidence is the confidence band of the hit.
+	Confidence Confidence `json:"confidence"`
 	// Extra holds unknown keys.
 	Extra map[string]json.RawMessage `json:"-"`
 }
@@ -149,9 +145,9 @@ type SearchHit struct {
 // SearchSections holds the two result lists of a cross type search.
 type SearchSections struct {
 	// Laws are statute hits.
-	Laws []SearchHit `json:"laws"`
+	Laws []LawHit `json:"laws"`
 	// Decisions are decision hits.
-	Decisions []SearchHit `json:"decisions"`
+	Decisions []DecisionHit `json:"decisions"`
 	// Extra holds unknown keys.
 	Extra map[string]json.RawMessage `json:"-"`
 }
@@ -200,15 +196,18 @@ type CrossTypeSearchResponse struct {
 	// Truncated is true when more results exist than were returned.
 	Truncated bool `json:"truncated"`
 	// Mode is the retrieval mode that was used.
-	Mode string `json:"mode"`
+	Mode Mode `json:"mode"`
+	// FiltersAppliedSections names, for each filter, the sections it ran on. A section that a
+	// filter does not name was searched without that filter. It is kept raw.
+	FiltersAppliedSections json.RawMessage `json:"filters_applied_sections,omitempty"`
 	// QueryExpansion reports the query expansion outcome.
 	QueryExpansion *QueryExpansion `json:"query_expansion"`
 	// FrequentlyCitedByResults lists decisions that many hits cite. The rows are kept raw.
 	FrequentlyCitedByResults []json.RawMessage `json:"frequently_cited_by_results"`
 	// NormsCitedByDecisionResults lists norms that the decision hits cite. The rows are kept raw.
 	NormsCitedByDecisionResults []json.RawMessage `json:"norms_cited_by_decision_results"`
-	// TopConfidence is the confidence of the best hit.
-	TopConfidence string `json:"top_confidence"`
+	// TopConfidence is the confidence band of the best hit. It is empty when not measured.
+	TopConfidence Confidence `json:"top_confidence"`
 }
 
 // UnmarshalJSON implements json.Unmarshaler and keeps unknown keys in Extra.
@@ -242,8 +241,8 @@ func (x *DecisionSearchResponse) UnmarshalJSON(b []byte) error {
 }
 
 // UnmarshalJSON implements json.Unmarshaler and keeps unknown keys in Extra.
-func (x *SearchHit) UnmarshalJSON(b []byte) error {
-	type plain SearchHit
+func (x *LawHit) UnmarshalJSON(b []byte) error {
+	type plain LawHit
 	return decodeWithExtra(b, (*plain)(x), &x.Extra)
 }
 

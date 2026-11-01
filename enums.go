@@ -211,3 +211,129 @@ const (
 	StatuteStVG   Statute = "StVG"
 	StatuteStVO   Statute = "StVO"
 )
+
+// ArtifactType is the kind of a search hit: a statute or a decision. A value this SDK does not
+// know is still kept as a plain string.
+type ArtifactType string
+
+// Artifact types.
+const (
+	// ArtifactTypeLaw is a statute hit.
+	ArtifactTypeLaw ArtifactType = "LAW"
+	// ArtifactTypeDecision is a decision hit.
+	ArtifactTypeDecision ArtifactType = "DECISION"
+)
+
+// Confidence bands the relevance of a search hit.
+type Confidence string
+
+// Confidence bands. An empty value means the server did not measure it for the request.
+const (
+	// ConfidenceHigh is the top band.
+	ConfidenceHigh Confidence = "high"
+	// ConfidenceMedium is the middle band.
+	ConfidenceMedium Confidence = "medium"
+	// ConfidenceLow is the lowest band.
+	ConfidenceLow Confidence = "low"
+)
+
+// CitationDateSource says which date a statute citation was checked against.
+type CitationDateSource string
+
+// Citation date sources.
+const (
+	// CitationDateSourceSentence means the sentence of the citation named its own date.
+	CitationDateSourceSentence CitationDateSource = "sentence"
+	// CitationDateSourceReferenceDate means the reference_date of the request was used.
+	CitationDateSourceReferenceDate CitationDateSource = "reference_date"
+	// CitationDateSourceNone means no date was available.
+	CitationDateSourceNone CitationDateSource = "none"
+)
+
+// ExternalStatus says what the check against an external register did for a finding.
+type ExternalStatus string
+
+// External statuses. The API checks the corpus only, so the status is "skipped" today.
+const (
+	// ExternalStatusSkipped means no external register was asked.
+	ExternalStatusSkipped ExternalStatus = "skipped"
+)
+
+// SubdivisionCheck says how far down a citation (Absatz, Satz) the check looked.
+type SubdivisionCheck string
+
+// Subdivision checks.
+const (
+	// SubdivisionNotChecked means only the section or the decision was checked.
+	SubdivisionNotChecked SubdivisionCheck = "not_checked"
+	// SubdivisionAbsatzUnverified means an Absatz was named and could not be verified.
+	SubdivisionAbsatzUnverified SubdivisionCheck = "absatz_unverified"
+)
+
+// MatchStrength says how strong the match of a finding is.
+type MatchStrength string
+
+// Match strengths.
+const (
+	// MatchStrengthExact is an exact match.
+	MatchStrengthExact MatchStrength = "exact"
+)
+
+// ReferenceType says whether a citation names a decision or a statute.
+type ReferenceType string
+
+// Reference types.
+const (
+	// ReferenceTypeCase is a citation of a decision.
+	ReferenceTypeCase ReferenceType = "case"
+	// ReferenceTypeStatute is a citation of a statute.
+	ReferenceTypeStatute ReferenceType = "statute"
+)
+
+// KeyBasis says how a unique citation was keyed.
+type KeyBasis string
+
+// Key bases.
+const (
+	// KeyBasisMatchedDecision means the citation is keyed by the decision it matched.
+	KeyBasisMatchedDecision KeyBasis = "matched_decision"
+	// KeyBasisCanonical means the citation is keyed by its canonical form.
+	KeyBasisCanonical KeyBasis = "canonical"
+)
+
+// ResolutionStatus says whether a citation edge points to a known decision.
+type ResolutionStatus string
+
+// Resolution statuses. An edge that is not resolved never counts as verified.
+const (
+	// ResolutionResolved means the edge points to a decision.
+	ResolutionResolved ResolutionStatus = "resolved"
+	// ResolutionUnresolvedAmbiguous means more than one decision fits.
+	ResolutionUnresolvedAmbiguous ResolutionStatus = "unresolved_ambiguous"
+	// ResolutionUnresolvedPending means the edge waits for resolution.
+	ResolutionUnresolvedPending ResolutionStatus = "unresolved_pending"
+	// ResolutionUnresolvedNoMatch means no decision fits.
+	ResolutionUnresolvedNoMatch ResolutionStatus = "unresolved_no_match"
+	// ResolutionUnresolvedOutOfCoverage means the cited decision lies outside the corpus coverage.
+	ResolutionUnresolvedOutOfCoverage ResolutionStatus = "unresolved_out_of_coverage"
+)
+
+// TextMode says what text a datapackage serves.
+type TextMode string
+
+// Text modes.
+const (
+	// TextModeExcerpt serves excerpts.
+	TextModeExcerpt TextMode = "excerpt"
+	// TextModeFullText serves whole judgments, cut at max_chars.
+	TextModeFullText TextMode = "full_text"
+)
+
+// RnSource says whether the Randnummern of a decision are the court's own.
+type RnSource string
+
+// Randnummer sources. Other values are kept as they are.
+const (
+	// RnSourcePrinted means the Randnummern are the court's own printed numbers.
+	RnSourcePrinted RnSource = "printed"
+)

@@ -198,12 +198,17 @@ type envelopeSetter interface {
 
 func decodeSuccess(resp *rawResponse, out any) error {
 	if err := json.Unmarshal(resp.body, out); err != nil {
-		return &APIError{Problem: Problem{
-			Status:     resp.status,
-			Code:       "invalid_response",
-			Detail:     "the answer is not valid JSON: " + err.Error(),
-			APIRelease: resp.header.Get("X-Klaracase-Api-Release"),
-		}}
+		return &DecodeError{
+			Problem: Problem{
+				Status:     resp.status,
+				Code:       CodeInvalidResponse,
+				Detail:     "the answer could not be decoded: " + err.Error(),
+				APIRelease: resp.header.Get("X-Klaracase-Api-Release"),
+			},
+			Err:  err,
+			Body: truncateRunes(string(resp.body), maxErrorDetail),
+			Raw:  append(json.RawMessage(nil), resp.body...),
+		}
 	}
 	if s, ok := out.(envelopeSetter); ok {
 		s.setEnvelope(ResponseMeta{

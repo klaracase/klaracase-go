@@ -1,11 +1,14 @@
 package klaracase
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"time"
+)
 
 // DecisionMetadata is the metadata block of a decision.
 type DecisionMetadata struct {
 	// DocumentType is the document type, for example "Urteil".
-	DocumentType string `json:"document_type"`
+	DocumentType DocumentType `json:"document_type"`
 	// ECLI is the European Case Law Identifier, when the decision has one.
 	ECLI *string `json:"ecli"`
 	// FileNumbers lists every Aktenzeichen of the decision.
@@ -20,8 +23,8 @@ type RnRange struct {
 	RnFrom int `json:"rn_from"`
 	// RnTo is the last Randnummer.
 	RnTo int `json:"rn_to"`
-	// RnSource says whether the numbers are the court's own ("printed") or computed.
-	RnSource string `json:"rn_source"`
+	// RnSource says whether the numbers are the court's own ("printed") or not.
+	RnSource RnSource `json:"rn_source"`
 	// Extra holds unknown keys.
 	Extra map[string]json.RawMessage `json:"-"`
 }
@@ -35,10 +38,10 @@ type DecisionResponse struct {
 	Aktenzeichen string `json:"aktenzeichen"`
 	// Court is the court short form.
 	Court string `json:"court"`
-	// Date is the decision date, YYYY-MM-DD.
-	Date string `json:"date"`
+	// Date is the decision date.
+	Date Date `json:"date"`
 	// Jurisdiction is DE for German decisions.
-	Jurisdiction string `json:"jurisdiction"`
+	Jurisdiction Jurisdiction `json:"jurisdiction"`
 	// Metadata holds the document type, the ECLI and the file numbers.
 	Metadata *DecisionMetadata `json:"metadata"`
 	// FortgeltungChecked is always false today: the API does not check whether a decision is still good law.
@@ -51,8 +54,8 @@ type DecisionResponse struct {
 	TextLength int `json:"text_length"`
 	// Truncated is true when FullText is shorter than the whole text.
 	Truncated bool `json:"truncated"`
-	// RnSource says whether the Randnummern are the court's own ("printed") or computed.
-	RnSource string `json:"rn_source"`
+	// RnSource says whether the Randnummern are the court's own ("printed") or not.
+	RnSource RnSource `json:"rn_source"`
 	// RnSourceNote explains RnSource in words.
 	RnSourceNote string `json:"rn_source_note"`
 	// AvailableSections lists the sections the decision has, for example "Tenor" and "Gründe".
@@ -61,6 +64,14 @@ type DecisionResponse struct {
 	AvailableRange *RnRange `json:"available_range"`
 	// AvailableRangeScope says what AvailableRange covers.
 	AvailableRangeScope string `json:"available_range_scope"`
+	// ReturnedRange is the span of Randnummern that FullText covers, when the request asked for
+	// a window. Whole chunks come back, so it can be wider than the window. It is nil otherwise.
+	ReturnedRange *RnRange `json:"returned_range,omitzero"`
+	// DateSource says where the stored date comes from. The server sends it for a scanned
+	// decision whose date may be wrong. It is kept raw because its shape is not fixed.
+	DateSource json.RawMessage `json:"date_source,omitempty"`
+	// DateConfidence says how far the stored date can be trusted. It is kept raw like DateSource.
+	DateConfidence json.RawMessage `json:"date_confidence,omitempty"`
 	// HasRnAnchors is true when the text carries Randnummer anchors.
 	HasRnAnchors bool `json:"has_rn_anchors"`
 }
@@ -72,11 +83,11 @@ type CorpusRef struct {
 	// Court is the court short form.
 	Court string `json:"court"`
 	// Date is the decision date.
-	Date string `json:"date"`
+	Date Date `json:"date"`
 	// Az is the Aktenzeichen.
 	Az string `json:"az"`
 	// DocumentType is the document type.
-	DocumentType string `json:"document_type"`
+	DocumentType DocumentType `json:"document_type"`
 	// ECLI is the European Case Law Identifier, when known.
 	ECLI *string `json:"ecli"`
 	// CorpusURL is the address of the decision on klaracase.de.
@@ -92,15 +103,16 @@ type CitationEdge struct {
 	// ReferenceRole is the role of the citation, for example "leitentscheidung", or nil.
 	ReferenceRole *string `json:"reference_role"`
 	// ResolutionStatus says whether the citation points to a known decision ("resolved").
-	ResolutionStatus string `json:"resolution_status"`
+	ResolutionStatus ResolutionStatus `json:"resolution_status"`
 	// InCorpus is true when the cited decision is in the corpus.
 	InCorpus bool `json:"in_corpus"`
 	// Corpus describes the cited decision when it is in the corpus.
 	Corpus *CorpusRef `json:"corpus"`
 	// FromArtifactID is the UUID of the decision the edge starts from.
 	FromArtifactID string `json:"from_artifact_id"`
-	// Hop is the distance from the source decision (1 or 2).
-	Hop int `json:"hop"`
+	// Hop is the distance from the source decision (1 or 2). It is 0 when the edge has no hop,
+	// as in a datapackage.
+	Hop int `json:"hop,omitempty"`
 	// Extra holds unknown keys.
 	Extra map[string]json.RawMessage `json:"-"`
 }
@@ -114,7 +126,7 @@ type CitationSource struct {
 	// Court is the court short form.
 	Court string `json:"court"`
 	// Date is the decision date.
-	Date string `json:"date"`
+	Date Date `json:"date"`
 	// Extra holds unknown keys.
 	Extra map[string]json.RawMessage `json:"-"`
 }
@@ -153,7 +165,7 @@ type CitationsResponse struct {
 	// ReferencedBy are the decisions that cite the source.
 	ReferencedBy []CitationEdge `json:"referenced_by"`
 	// ServedDirection is the direction that was served.
-	ServedDirection string `json:"served_direction"`
+	ServedDirection Direction `json:"served_direction"`
 	// ServedReferencesTotal is the number of outgoing edges served.
 	ServedReferencesTotal int `json:"served_references_total"`
 	// ServedReferencedByTotal is the number of incoming edges served.
@@ -199,13 +211,13 @@ type DatapackageDecision struct {
 	// Court is the court short form.
 	Court string `json:"court"`
 	// Date is the decision date.
-	Date string `json:"date"`
+	Date Date `json:"date"`
 	// DocumentType is the document type.
-	DocumentType string `json:"document_type"`
+	DocumentType DocumentType `json:"document_type"`
 	// ECLI is the European Case Law Identifier, when known.
 	ECLI *string `json:"ecli"`
 	// Jurisdiction is DE for German decisions.
-	Jurisdiction string `json:"jurisdiction"`
+	Jurisdiction Jurisdiction `json:"jurisdiction"`
 	// Excerpt is the served text: an excerpt, or the text when full_text was set.
 	Excerpt string `json:"excerpt"`
 	// ExcerptSpan says which part of the decision Excerpt covers, for example "document_start".
@@ -268,15 +280,16 @@ type DatapackageResponse struct {
 	// Deduped is the number of duplicate ids that collapsed.
 	Deduped int `json:"deduped"`
 	// TextMode is "excerpt" or "full_text".
-	TextMode string `json:"text_mode"`
+	TextMode TextMode `json:"text_mode"`
 	// MaxChars is the text cap that was applied per decision.
 	MaxChars int `json:"max_chars"`
 	// Truncated is true when the response budget dropped content.
 	Truncated bool `json:"truncated"`
 	// PayloadTruncated is true when the server cut the payload.
 	PayloadTruncated bool `json:"payload_truncated"`
-	// AssembledAt is the time the package was assembled, RFC 3339.
-	AssembledAt string `json:"assembled_at"`
+	// AssembledAt is the time the package was assembled. The server writes it with the offset
+	// +00:00; it is parsed to the same instant.
+	AssembledAt time.Time `json:"assembled_at"`
 }
 
 // UnmarshalJSON implements json.Unmarshaler and keeps unknown keys in Extra.

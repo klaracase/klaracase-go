@@ -43,7 +43,9 @@ func ExampleDecisionsService_Search() {
 	for _, hit := range res.Results {
 		fmt.Println(hit.Court, hit.Aktenzeichen, hit.Date)
 	}
-	fmt.Println("credits left:", *res.Credits.CreditsRemaining)
+	if left, ok := res.CreditsRemaining(); ok {
+		fmt.Println("credits left:", left)
+	}
 }
 
 func ExampleDecisionsService_Get() {
@@ -172,7 +174,7 @@ func ExampleCorpusService_Facets() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	for norm, count := range res.Values {
-		fmt.Println(norm, count.Value)
+	for _, v := range res.Values {
+		fmt.Println(v.Key, v.Count.Value)
 	}
 }

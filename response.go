@@ -117,3 +117,32 @@ func decodeWithExtra(data []byte, target any, extra *map[string]json.RawMessage)
 	*extra = all
 	return nil
 }
+
+// nilIfNull turns the JSON literal null into nil. A json.RawMessage field reads a null key as
+// the four bytes "null", which is an odd value to test for.
+func nilIfNull(raw json.RawMessage) json.RawMessage {
+	if string(raw) == "null" {
+		return nil
+	}
+	return raw
+}
+
+// CreditsRemaining returns the credits the organization has left after this call and true. It
+// returns false when the body carries no credits, or when the call was not metered (a
+// superadmin), where the balance is null.
+func (e *Envelope) CreditsRemaining() (int64, bool) {
+	if e.Credits == nil || e.Credits.CreditsRemaining == nil {
+		return 0, false
+	}
+	return int64(*e.Credits.CreditsRemaining), true
+}
+
+// Cost returns the credits this call cost and true. Cost is 0 for a free call and for a repeat
+// in the same month. It returns false when the body carries no credits, or when the call was
+// not metered.
+func (e *Envelope) Cost() (int64, bool) {
+	if e.Credits == nil || e.Credits.Cost == nil {
+		return 0, false
+	}
+	return int64(*e.Credits.Cost), true
+}

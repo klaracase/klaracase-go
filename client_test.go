@@ -514,12 +514,39 @@ func TestClientIsSafeForConcurrentUse(t *testing.T) {
 	wg.Wait()
 }
 
-func TestBodyOfAnInvalidSuccessIsAnAPIError(t *testing.T) {
-	client, _ := newTestClient(t, func(w http.ResponseWriter, r *http.Request) { _, _ = io.WriteString(w, "<html>") })
-	_, err := client.Corpus.Coverage(context.Background(), CoverageParams{})
-	var ae *APIError
-	if !errors.As(err, &ae) || ae.Code != "invalid_response" {
-		t.Fatalf("got %v", err)
+func TestBodyOfAnInvalidSuccessIsADecodeError(t *testing.T) {
+	long := `{"total_decisions":{"value":"seven"},"pad":"` + strings.Repeat("ä", 1500) + `"}`
+	for name, body := range map[string]string{"not json": "<html>", "type mismatch": long} {
+		t.Run(name, func(t *testing.T) {
+			client, _ := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("X-Klaracase-Api-Release", "0.95.0")
+				_, _ = io.WriteString(w, body)
+			})
+			res, err := client.Corpus.Coverage(context.Background(), CoverageParams{})
+			if res != nil {
+				t.Error("a decode error returns no response")
+			}
+			var de *DecodeError
+			if !errors.As(err, &de) {
+				t.Fatalf("got %T %v, want *DecodeError", err, err)
+			}
+			if de.Status != 200 || de.Code != "invalid_response" || de.APIRelease != "0.95.0" || de.Err == nil {
+				t.Errorf("decode error %+v", de)
+			}
+			if string(de.Raw) != body {
+				t.Error("Raw must hold the whole body, so a paid answer is not lost")
+			}
+			if n := len([]rune(de.Body)); n > 1000 || (len([]rune(body)) > 1000 && n != 1000) {
+				t.Errorf("Body has %d runes, want at most 1000 and exactly 1000 for a long body", n)
+			}
+			if base, ok := AsError(err); !ok || base.Code != "invalid_response" {
+				t.Errorf("AsError = %v, %v", base, ok)
+			}
+			var typeErr *json.UnmarshalTypeError
+			if name == "type mismatch" && !errors.As(err, &typeErr) {
+				t.Errorf("the decoder error must stay reachable: %v", err)
+			}
+		})
 	}
 }
 

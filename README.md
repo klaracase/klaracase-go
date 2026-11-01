@@ -73,7 +73,9 @@ func main() {
 	for _, hit := range res.Results {
 		fmt.Println(hit.Court, hit.Aktenzeichen, hit.Date)
 	}
-	fmt.Println("credits left:", *res.Credits.CreditsRemaining)
+	if left, ok := res.CreditsRemaining(); ok {
+		fmt.Println("credits left:", left)
+	}
 }
 ```
 
@@ -280,10 +282,31 @@ Each method returns a struct with the documented keys of the answer, with nothin
 reordered. Three things come with every response:
 
 - `res.Credits` has `Metered`, `Cost` and `CreditsRemaining`. `Cost` and `CreditsRemaining` are
-  pointers, because a superadmin call is not metered and both are `null`.
+  pointers, because a superadmin call is not metered and both are `null`. Use
+  `res.CreditsRemaining()` and `res.Cost()` instead: each returns `(int64, bool)`, and the bool is
+  false when the value is absent.
 - `res.Meta` has `Status`, `APIRelease` (the `X-Klaracase-Api-Release` header) and `Duration`.
 - `res.Extra` holds every top level key the client does not model, as `json.RawMessage`. Nested rows
-  have their own `Extra`. `res.Raw` is the whole body, unchanged.
+  have their own `Extra`. `res.Raw` is the whole body, unchanged. Marshal `Raw` when you need
+  lossless JSON. Marshaling the typed struct writes the modeled keys only.
+
+Values have types where the API has a fixed shape:
+
+- Decision dates are `klaracase.Date` (`YYYY-MM-DD`, with a `Time()` method). Months in the
+  coverage report are `klaracase.YearMonth`.
+- Timestamps are `time.Time`. The server writes them with the offset `+00:00`, and they parse to
+  the same instant. Marshaling writes `Z`. `Raw` keeps the original text.
+- Enum-like values are typed strings with constants, such as `Verdict`, `Confidence`,
+  `ResolutionStatus` and `DocumentType`. A value the SDK does not know is kept as it is.
+- A cross type search returns `LawHit` rows in `Sections.Laws` and `DecisionHit` rows in
+  `Sections.Decisions`. A statute row has no Aktenzeichen, court, date or document type.
+- `FacetsResponse.Values` is a slice in the order of the server. `Values.Lookup("BGH")` finds one.
+- `Finding.Excerpt(text)` returns the cited part of the text you sent. The offsets count code
+  points, and `Excerpt` cuts by runes.
+
+If a success body does not fit the types (a value of the wrong type, or a body that is not JSON),
+the call returns a `*klaracase.DecodeError` and no response. The call may already be charged, so
+the error keeps the whole body in `Raw`, and the first 1,000 characters in `Body`.
 
 The API only adds keys within v1, so a new release does not break your code.
 
