@@ -37,6 +37,13 @@ Keep the token out of your source code. Put it in the `KLARACASE_API_TOKEN` envi
 export KLARACASE_API_TOKEN=klc_your_token_here
 ```
 
+Then pick one way to build the client:
+
+- `klaracase.NewFromEnv()` reads `KLARACASE_API_TOKEN`. A missing or empty variable returns a
+  `*klaracase.ConfigurationError`.
+- `klaracase.New(token)` takes the token as an argument. An empty token returns a
+  `*klaracase.ConfigurationError`. It does not fall back to the environment.
+
 ## Quick start
 
 ```go
