@@ -36,7 +36,7 @@ func TestErrorCarriesHeaderMethodAndURLButNeverTheToken(t *testing.T) {
 	if !ok {
 		t.Fatal(err)
 	}
-	if base.Method != "GET" || !strings.HasSuffix(base.URL, "/api/v1/decisions/search") {
+	if base.Method != http.MethodGet || !strings.HasSuffix(base.URL, "/api/v1/decisions/search") {
 		t.Errorf("method %q url %q", base.Method, base.URL)
 	}
 	if u, perr := url.Parse(base.URL); perr != nil || u.RawQuery != "" || strings.Contains(base.URL, "geheimer") {
@@ -63,7 +63,7 @@ func TestMethodAndURLAreSetOnEveryKindOfFailure(t *testing.T) {
 	post, _ := newTestClient(t, func(w http.ResponseWriter, r *http.Request) { _, _ = io.WriteString(w, "<html>") })
 	_, err := post.CitationChecks.Create(context.Background(), CreateCitationCheckParams{Text: "x"})
 	var de *DecodeError
-	if !errors.As(err, &de) || de.Method != "POST" || !strings.HasSuffix(de.URL, "/citation-checks") {
+	if !errors.As(err, &de) || de.Method != http.MethodPost || !strings.HasSuffix(de.URL, "/citation-checks") {
 		t.Errorf("decode error %+v", de)
 	}
 	dropped, _ := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
@@ -72,7 +72,7 @@ func TestMethodAndURLAreSetOnEveryKindOfFailure(t *testing.T) {
 	}, WithMaxRetries(0))
 	_, err = dropped.Corpus.Coverage(context.Background(), CoverageParams{})
 	var te *TransportError
-	if !errors.As(err, &te) || te.Method != "GET" || !strings.HasSuffix(te.URL, "/corpus/coverage") {
+	if !errors.As(err, &te) || te.Method != http.MethodGet || !strings.HasSuffix(te.URL, "/corpus/coverage") {
 		t.Errorf("transport error %+v", te)
 	}
 	_, err = dropped.Corpus.Coverage(context.Background(), CoverageParams{}, WithRequestTimeout(-1))
@@ -123,7 +123,7 @@ func TestRetryAfterHTTPDateIsRead(t *testing.T) {
 	client, slept := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		if n.Add(1) == 1 {
 			w.Header().Set("Retry-After", now.Add(7*time.Second).UTC().Format(http.TimeFormat))
-			w.WriteHeader(503)
+			w.WriteHeader(http.StatusServiceUnavailable)
 			return
 		}
 		_, _ = io.WriteString(w, "{}")

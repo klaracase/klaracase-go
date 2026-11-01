@@ -160,7 +160,7 @@ func (c *Client) attempt(ctx context.Context, r request, cfg requestConfig) (*ra
 	if err != nil {
 		return nil, c.transportError(ctx, err)
 	}
-	defer res.Body.Close()
+	defer func() { _ = res.Body.Close() }()
 	data, err := io.ReadAll(res.Body)
 	if err != nil {
 		return nil, c.transportError(ctx, err)
@@ -189,7 +189,7 @@ func backoff(n int) time.Duration {
 	if ceiling > float64(maxBackoff) {
 		ceiling = float64(maxBackoff)
 	}
-	return time.Duration(rand.Float64() * ceiling)
+	return time.Duration(rand.Float64() * ceiling) //nolint:gosec // jitter for a retry wait, not a secret
 }
 
 // noteDeprecation reports a deprecated endpoint once per endpoint and client, when the answer
@@ -317,17 +317,14 @@ func truncateRunes(s string, n int) string {
 	return string(runes[:n])
 }
 
-// number reads a numeric problem member (retry_after_seconds, cost, balance).
-func (p problem) number(name string) (float64, bool) {
-	raw, ok := p.Extra[name]
-	if !ok {
-		return 0, false
-	}
+// number reads a numeric problem member (cost, balance). A member that is absent or not a
+// number reads as 0.
+func (p problem) number(name string) float64 {
 	var f float64
-	if json.Unmarshal(raw, &f) != nil {
-		return 0, false
+	if raw, ok := p.Extra[name]; ok {
+		_ = json.Unmarshal(raw, &f)
 	}
-	return f, true
+	return f
 }
 
 // readTypedMembers reads the members that only some problems carry. A member that is absent or
@@ -365,8 +362,8 @@ func (p problem) toError(resp *rawResponse, now time.Time) error {
 	case http.StatusUnauthorized:
 		return &AuthenticationError{Problem: base}
 	case http.StatusPaymentRequired:
-		cost, _ := p.number("cost")
-		balance, _ := p.number("balance")
+		cost := p.number("cost")
+		balance := p.number("balance")
 		return &InsufficientCreditsError{Problem: base, Cost: int(cost), Balance: int(balance)}
 	case http.StatusForbidden:
 		e := &PermissionError{Problem: base}

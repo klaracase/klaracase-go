@@ -75,7 +75,7 @@ const (
 	// CodeNotGermanLegalText means the text does not look like German legal text, refused before any charge (422).
 	CodeNotGermanLegalText = "not_german_legal_text"
 	// CodeUnrecognisableNormToken means the norm for a cited_norms facet cannot be read (422).
-	CodeUnrecognisableNormToken = "unrecognisable_norm_token"
+	CodeUnrecognisableNormToken = "unrecognisable_norm_token" //nolint:gosec // an error code of the API, not a credential
 	// CodeInvalidReference means the norm reference cannot be read (422).
 	CodeInvalidReference = "invalid_reference"
 	// CodeRangeNotSupported means a range of norms was given (422).

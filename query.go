@@ -58,7 +58,7 @@ func (q query) encode() string {
 func escapeSegment(s string) string {
 	const hex = "0123456789ABCDEF"
 	var b strings.Builder
-	for i := 0; i < len(s); i++ {
+	for i := range len(s) {
 		ch := s[i]
 		switch {
 		case ch >= 'A' && ch <= 'Z', ch >= 'a' && ch <= 'z', ch >= '0' && ch <= '9',

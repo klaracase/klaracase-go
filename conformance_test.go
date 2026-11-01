@@ -520,7 +520,7 @@ func checkRequest(t *testing.T, want confExpectRequest, got recordedRequest) {
 			}
 		}
 	}
-	if !reflect.DeepEqual(map[string][]string(got.query), wantQuery) && !(len(got.query) == 0 && len(wantQuery) == 0) {
+	if !reflect.DeepEqual(map[string][]string(got.query), wantQuery) && (len(got.query) != 0 || len(wantQuery) != 0) {
 		t.Errorf("query = %v, want %v", got.query, wantQuery)
 	}
 	for name, value := range want.Headers {
@@ -959,7 +959,7 @@ func checkProblemMembers(t *testing.T, base *Error, body []byte) {
 		}
 	}
 	gotExtra := decodeExtra(base.Extra)
-	if !reflect.DeepEqual(gotExtra, wantExtra) && !(len(gotExtra) == 0 && len(wantExtra) == 0) {
+	if !reflect.DeepEqual(gotExtra, wantExtra) && (len(gotExtra) != 0 || len(wantExtra) != 0) {
 		t.Errorf("extra = %v, want %v", gotExtra, wantExtra)
 	}
 }

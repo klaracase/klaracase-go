@@ -283,6 +283,8 @@ func (s *CitationCheckDocumentsService) WaitUntilReady(ctx context.Context, docu
 				ErrorCode: code,
 				Document:  doc,
 			}
+		default:
+			// uploaded, extracting, ocr_pending, or a status this SDK does not know: not final.
 		}
 		if err := s.c.sleep(ctx, cfg.interval); err != nil {
 			if errors.Is(ctx.Err(), context.DeadlineExceeded) {

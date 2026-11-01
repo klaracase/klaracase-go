@@ -1,0 +1,50 @@
+# golangci-lint v2 configuration. Run it with: golangci-lint run
+version: "2"
+
+run:
+  go: "1.24"
+  tests: true
+
+linters:
+  default: none
+  enable:
+    - bodyclose
+    - copyloopvar
+    - errcheck
+    - errname
+    - errorlint
+    - exhaustive
+    - gosec
+    - govet
+    - ineffassign
+    - intrange
+    - misspell
+    - noctx
+    - revive
+    - staticcheck
+    - unparam
+    - unused
+    - usestdlibvars
+  settings:
+    exhaustive:
+      # A switch with a default branch is exhaustive: new enum values from the server are expected.
+      default-signifies-exhaustive: true
+    revive:
+      rules:
+        - name: exported
+  exclusions:
+    generated: lax
+    rules:
+      # Tests build servers, read fixtures and write throwaway data on purpose.
+      - path: _test\.go
+        linters:
+          - gosec
+          - noctx
+          - errcheck
+          - unparam
+          - bodyclose
+          - exhaustive
+
+formatters:
+  enable:
+    - gofmt

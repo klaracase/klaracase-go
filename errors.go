@@ -79,7 +79,7 @@ type Candidate struct {
 
 // Problem is another name for Error. The concrete error types embed it under this name,
 // because a field cannot be called Error when the type also has an Error method.
-type Problem = Error
+type Problem = Error //nolint:errname // a documented alias: the concrete errors embed it under this name
 
 // Error implements the error interface.
 func (e *Error) Error() string {

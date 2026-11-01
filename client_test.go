@@ -354,7 +354,7 @@ func TestUploadRetrySendsTheWholeFileAgain(t *testing.T) {
 			writeProblem(w, 429, `{"status":429,"code":"rate_limited","retry_after_seconds":3}`)
 			return
 		}
-		w.WriteHeader(202)
+		w.WriteHeader(http.StatusAccepted)
 		_, _ = io.WriteString(w, `{"id":"d1","status":"uploaded"}`)
 	})
 	doc, err := client.CitationCheckDocuments.Upload(context.Background(), UploadParams{
@@ -414,7 +414,7 @@ func TestCustomHTTPClientIsUsedAndNotChanged(t *testing.T) {
 	custom := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		used.Add(1)
 		return &http.Response{
-			StatusCode: 200, Header: http.Header{"X-Klaracase-Api-Release": {"0.95.0"}},
+			StatusCode: http.StatusOK, Header: http.Header{"X-Klaracase-Api-Release": {"0.95.0"}},
 			Body: io.NopCloser(strings.NewReader(`{"total_decisions":{"value":7,"is_floor":true}}`)), Request: r,
 		}, nil
 	})}
