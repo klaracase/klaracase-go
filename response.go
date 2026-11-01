@@ -20,13 +20,39 @@ type ResponseMeta struct {
 
 // Credits is the credit accounting the API adds to every answer. For a superadmin the call is
 // not metered and Cost and CreditsRemaining are nil.
+//
+// Plan credits are spent first. While the optional prepaid API budget is available, a call that
+// the plan credits do not cover is paid from the budget, in whole and never in part. Cost counts
+// both, and CreditsRemaining never counts the budget.
 type Credits struct {
 	// Metered is false when the call was not billed.
 	Metered bool `json:"metered"`
-	// Cost is the credits this call cost, 0 for a free call or a repeat in the same credit period.
+	// Cost is the credits this call cost, plan credits and API budget together. It is 0 for a
+	// free call or a repeat in the same credit period, and nil when Metered is false.
 	Cost *int `json:"cost"`
-	// CreditsRemaining is the balance of the organization after the call.
+	// CreditsRemaining is the plan credits the organization has left in the current credit
+	// period after the call. It never counts the API budget. It is nil when Metered is false.
 	CreditsRemaining *int `json:"credits_remaining"`
+	// APIBudget is the prepaid API budget after the call. It is nil when the organization has
+	// no budget and may not load one, and when the answer has no api_budget key. Test it for
+	// nil before you read it; a nil value is not a budget of zero.
+	APIBudget *APIBudget `json:"api_budget,omitempty"`
+	// Extra holds unknown keys.
+	Extra map[string]json.RawMessage `json:"-"`
+}
+
+// APIBudget is the prepaid API budget of an organization after a call. It pays for API and MCP
+// calls once the plan credits are used up, and it does not expire. The web app never draws on it.
+// The budget exists for the Professional and Enterprise plans.
+type APIBudget struct {
+	// Cents is the budget after the call, in euro cents. It can be negative after a payment was lost.
+	Cents int `json:"cents"`
+	// RateCentsPerCredit is what one credit costs from the budget, in whole euro cents. It is the
+	// rate for the organization, which a contract can set apart from the list rate.
+	RateCentsPerCredit int `json:"rate_cents_per_credit"`
+	// CreditsAtRate is how many further credits the spendable part of the budget pays for at that
+	// rate. It is 0 when the budget is empty or on hold.
+	CreditsAtRate int `json:"credits_at_rate"`
 	// Extra holds unknown keys.
 	Extra map[string]json.RawMessage `json:"-"`
 }
@@ -61,6 +87,12 @@ func (e *Envelope) envelope() *Envelope { return e }
 func (c *Credits) UnmarshalJSON(b []byte) error {
 	type plain Credits
 	return decodeWithExtra(b, (*plain)(c), &c.Extra)
+}
+
+// UnmarshalJSON implements json.Unmarshaler and keeps unknown keys in Extra.
+func (b *APIBudget) UnmarshalJSON(data []byte) error {
+	type plain APIBudget
+	return decodeWithExtra(data, (*plain)(b), &b.Extra)
 }
 
 // knownKeysCache maps a struct type to the set of JSON keys it models.
@@ -127,9 +159,10 @@ func nilIfNull(raw json.RawMessage) json.RawMessage {
 	return raw
 }
 
-// CreditsRemaining returns the credits the organization has left after this call and true. It
-// returns false when the body carries no credits, or when the call was not metered (a
-// superadmin), where the balance is null.
+// CreditsRemaining returns the plan credits the organization has left after this call and true.
+// It never counts the API budget; read Credits.APIBudget for that. It returns false when the
+// body carries no credits, or when the call was not metered (a superadmin), where the balance
+// is null.
 func (e *Envelope) CreditsRemaining() (int64, bool) {
 	if e.Credits == nil || e.Credits.CreditsRemaining == nil {
 		return 0, false

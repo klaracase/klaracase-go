@@ -46,6 +46,7 @@ var exampleTypes = map[string]reflect.Type{
 var bodyTypes = map[string]reflect.Type{
 	"corpus.coverage.not_metered.json":    reflect.TypeFor[CoverageResponse](),
 	"corpus.facets.cited_norms.json":      reflect.TypeFor[FacetsResponse](),
+	"decisions.search.api_budget.json":    reflect.TypeFor[DecisionSearchResponse](),
 	"decisions.search.future_key.json":    reflect.TypeFor[DecisionSearchResponse](),
 	"documents.extracting.json":           reflect.TypeFor[CitationCheckDocument](),
 	"documents.failed.encrypted_pdf.json": reflect.TypeFor[CitationCheckDocument](),

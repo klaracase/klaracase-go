@@ -222,3 +222,37 @@ func TestDecisionKeysFromTheContractProse(t *testing.T) {
 		t.Errorf("filters_applied_sections %s extra %v", cross.FiltersAppliedSections, cross.Extra)
 	}
 }
+
+func TestCreditsAPIBudget(t *testing.T) {
+	res := decodeExample[DecisionSearchResponse](t, "../conformance/bodies/decisions.search.api_budget")
+	budget := res.Credits.APIBudget
+	if budget == nil || budget.Cents != 4991 || budget.RateCentsPerCredit != 9 || budget.CreditsAtRate != 554 {
+		t.Fatalf("api budget %+v", budget)
+	}
+	if cost, _ := res.Cost(); cost != 1 {
+		t.Errorf("cost %d", cost)
+	}
+	if left, ok := res.CreditsRemaining(); !ok || left != 0 {
+		t.Errorf("credits remaining counts plan credits only, got %d, %v", left, ok)
+	}
+	// Absent is nil, never a zero budget.
+	plain := decodeExample[DecisionSearchResponse](t, "decisions.search")
+	if plain.Credits == nil || plain.Credits.APIBudget != nil {
+		t.Errorf("a body without api_budget must read nil: %+v", plain.Credits)
+	}
+	null := Credits{}
+	if err := json.Unmarshal([]byte(`{"metered":true,"cost":1,"credits_remaining":2,"api_budget":null}`), &null); err != nil || null.APIBudget != nil {
+		t.Errorf("api_budget null: %v %+v", err, null.APIBudget)
+	}
+}
+
+func TestCreditsAPIBudgetKeepsUnknownKeys(t *testing.T) {
+	var c Credits
+	body := `{"metered":true,"cost":1,"credits_remaining":2,"api_budget":{"cents":-5,"rate_cents_per_credit":9,"credits_at_rate":0,"held":true},"future":1}`
+	if err := json.Unmarshal([]byte(body), &c); err != nil {
+		t.Fatal(err)
+	}
+	if c.APIBudget == nil || c.APIBudget.Cents != -5 || string(c.APIBudget.Extra["held"]) != "true" || string(c.Extra["future"]) != "1" {
+		t.Errorf("credits %+v budget %+v", c, c.APIBudget)
+	}
+}
