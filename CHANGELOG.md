@@ -47,7 +47,8 @@ This project follows [Semantic Versioning](https://semver.org/).
   `Spent`, `ResetsAt`, `ResetsAtRaw`, `SettingsURL`; no `Cost`, no `Balance`), `IsTokenLimitReached`
   and `CodeTokenLimitReached`. A token limit also matches `errors.As` for
   `*InsufficientCreditsError` and `IsInsufficientCredits`. Neither 402 is retried. The URLs are for
-  a human admin; the SDK never opens them.
+  a human admin; the SDK never opens them. `InsufficientCreditsError.APIBudget` holds the optional
+  `api_budget` object of the 402 problem, `nil` when the problem has none.
 - `agenttools`: the slim credits carry `api_budget`; the error text of `insufficient_credits` and
   `token_limit_reached` adds `next_step` (stop, do not open a link, tell the user).
 - Conformance pack: 106 cases (four new for 0.96.0). README section "Credits, API budget and

@@ -270,6 +270,11 @@ type InsufficientCreditsError struct {
 	// organization may load one. It is for a human admin: a program or an AI agent must never open
 	// it or follow it, only show it to its user.
 	TopUpURL string
+	// APIBudget is the prepaid API budget as it stands, the same object as Credits.APIBudget on
+	// an answer. The API sends it only while the API budget is available and the organization
+	// holds a budget or may load one. It is nil when the answer has no api_budget object; a nil
+	// value is not a budget of zero.
+	APIBudget *APIBudget
 }
 
 // TokenLimitReachedError is an HTTP 402 answer with the code "token_limit_reached": this API key

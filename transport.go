@@ -380,6 +380,10 @@ func (p problem) toError(resp *rawResponse, now time.Time) error {
 		_ = json.Unmarshal(p.Extra["reason"], &reason)
 		e.Reason = InsufficientCreditsReason(reason)
 		_ = json.Unmarshal(p.Extra["top_up_url"], &e.TopUpURL)
+		var budget APIBudget
+		if json.Unmarshal(p.Extra["api_budget"], &budget) == nil && bytes.HasPrefix(bytes.TrimSpace(p.Extra["api_budget"]), []byte("{")) {
+			e.APIBudget = &budget
+		}
 		return e
 	case http.StatusForbidden:
 		e := &PermissionError{Problem: base}

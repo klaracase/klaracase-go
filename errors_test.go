@@ -361,6 +361,31 @@ func TestInsufficientCreditsReasonAndTopUpURL(t *testing.T) {
 			t.Errorf("error %+v", e)
 		}
 	})
+	t.Run("the api_budget object of the problem is read", func(t *testing.T) {
+		body := `{"status":402,"code":"insufficient_credits","cost":1,"balance":0,"reason":"api_budget_empty","api_budget":{"cents":0,"rate_cents_per_credit":25,"credits_at_rate":0}}`
+		c := problemClient(t, 402, body, nil)
+		_, err := c.Decisions.Search(context.Background(), SearchDecisionsParams{Query: "Untreue"})
+		var e *InsufficientCreditsError
+		if !errors.As(err, &e) || e.APIBudget == nil || e.APIBudget.RateCentsPerCredit != 25 || e.APIBudget.Cents != 0 {
+			t.Fatalf("error %+v", e)
+		}
+		if string(e.Extra["api_budget"]) == "" {
+			t.Error("api_budget is not kept in Extra")
+		}
+	})
+	t.Run("without an api_budget object APIBudget is nil", func(t *testing.T) {
+		for _, body := range []string{
+			string(fixture(t, "conformance/problems/insufficient_credits.api_budget_empty.json")),
+			`{"status":402,"code":"insufficient_credits","cost":1,"balance":0,"api_budget":"free"}`,
+		} {
+			c := problemClient(t, 402, body, nil)
+			_, err := c.Decisions.Search(context.Background(), SearchDecisionsParams{Query: "Untreue"})
+			var e *InsufficientCreditsError
+			if !errors.As(err, &e) || e.APIBudget != nil {
+				t.Errorf("error %+v", e)
+			}
+		}
+	})
 	t.Run("an unknown reason is kept", func(t *testing.T) {
 		c := problemClient(t, 402, `{"status":402,"code":"insufficient_credits","cost":1,"balance":0,"reason":"a_future_reason"}`, nil)
 		_, err := c.Decisions.Search(context.Background(), SearchDecisionsParams{Query: "Untreue"})
